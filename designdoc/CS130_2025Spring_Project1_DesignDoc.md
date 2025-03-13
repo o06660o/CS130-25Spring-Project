@@ -25,33 +25,103 @@ None.
 
 > **A1:** Copy here the declaration of each new or changed `struct` or struct member, global or static variable, `typedef`, or enumeration. Identify the purpose of each in 25 words or less.
 
-*Your answer here.*
+#### Pairing Heap
+
+A data structure that satisfies the heap property by using merge operation.
+
+```c
+/* Heap element. */
+struct heap_elem
+{
+  struct heap_elem *child;   /* Child element. */
+  struct heap_elem *sibling; /* Next brother element. */
+};
+
+/* Compares the value of two heap elements A and B, given
+   auxiliary data AUX.  Returns true if A is less than B, or
+   false if A is greater than or equal to B. */
+typedef bool heap_less_func (const struct heap_elem *lhs,
+                             const struct heap_elem *rhs, void *aux);
+
+/* Heap. */
+struct heap
+{
+  size_t size;           /* current number of elements in the heap. */
+  struct heap_elem *top; /* Heap top, which is the greatest element. */
+  heap_less_func *less;  /* Comparison function. */
+};
+```
+
+#### New Struct Member to `struct thread`
+
+```c
+struct thread
+{
+  /* ... */
+
+  /* Shared between thread.c and devices/timer.c. */
+  int64_t wakeup_tick;       /* Time when the thread stops sleeping. */
+  struct heap_elem heapelem; /* Heap element for sleeping queue. */
+
+  /* ... */
+}
+```
+
+#### New Global Variable to `devices/timer.c`
+
+```c
+/* A priority queue which contains sleeping threads. */
+static struct heap sleep_que;
+```
 
 ### Algorithms
 
 > **A2:** Briefly describe what happens in a call to `timer_sleep()`, including the effects of the timer interrupt handler.
 
-*Your answer here.*
+`timer_sleep()` adds the current thread to the `sleep_que`, which is a priority
+queue based on the pairing heap, and blocks the current thread.
+
+`timer_interrupt()` updates the static variable `ticks`, and called function
+`thread_tick()` declared in `threads/thread.c` to update statistics (time
+spent idle, in kernel threads, or in user programs), then check whether a
+sleeping thread needs to be woken up. If true, wake those thread(s) up.
 
 > **A3:** What steps are taken to minimize the amount of time spent in the timer interrupt handler?
 
-*Your answer here.*
+When a thread calls `timer_sleep()`, it is blocked immediately and is added to
+the sleeping queue, wating for an external wakeup. Then we use a data structure
+called Pairing Heap, whose time complexity to query the minimum item is
+$\mathcal{O}(1)$. Therefore, we can check all the sleeping threads efficiently.
 
 ### Synchronization
 
 > **A4:** How are race conditions avoided when multiple threads call `timer_sleep()` simultaneously?
 
-*Your answer here.*
+Before operations, we called `intr_disable()` to disable interrupts. And
+restored the interrupts to the previous state when operations are done.
+Therefore, at one time there is only one thread accessing the sleep queue.
 
 > **A5:** How are race conditions avoided when a timer interrupt occurs during a call to `timer_sleep()`?
 
-*Your answer here.*
+Same as A4, we disabled interrupts.
 
 ### Rationale
 
 > **A6:** Why did you choose this design? In what ways is it superior to another design you considered?
 
-*Your answer here.*
+- We have considered using a List to implement the sleeping queue. Howerver,
+  the Pairing Heap has advantage of time complexity.
+- Compared with creating an array with fixed size or allocating memory
+  dynamically, we use an approach similar to the list declared in
+  `lib/kernel/list.h`, that is, embedding heap nodes directly within the thread
+  struct.
+  - Fixed-size Arrays:
+  The reason we don't create a fixed-size array is that we suppose the maximum
+  number of threads might be large after we finished demand paging in
+  project 3.
+  - Dynamic Allocation:
+  We have two reasons not to allocate memory dynamically. The first is memory
+  safety, and the second is to eliminate allocation/deallocation costs.
 
 ---
 
