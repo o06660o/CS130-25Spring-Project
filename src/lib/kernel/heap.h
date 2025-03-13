@@ -47,8 +47,8 @@ struct heap
 void heap_init (struct heap *, heap_less_func *);
 
 /* Operations. */
-void heap_push (struct heap *, struct heap_elem *, void *aux);
-struct heap_elem *heap_pop (struct heap *, void *aux);
+void heap_push (struct heap *, struct heap_elem *);
+struct heap_elem *heap_pop (struct heap *);
 /* WARNING: You are allowed to modify the data of the top element, but
    modifying the data in a way that affects the heap structure (e.g., changing
    a key used for ordering) will break the heap. */

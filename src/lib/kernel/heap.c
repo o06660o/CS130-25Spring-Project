@@ -54,7 +54,7 @@ heap_elem_swap (struct heap_elem **a, struct heap_elem **b)
 
 /* Push ELEM to the HEAP. */
 void
-heap_push (struct heap *heap, struct heap_elem *elem, void *aux)
+heap_push (struct heap *heap, struct heap_elem *elem)
 {
   ASSERT (heap != NULL);
   elem->child = elem->sibling = NULL;
@@ -64,7 +64,7 @@ heap_push (struct heap *heap, struct heap_elem *elem, void *aux)
 
 /* Return the top element in HEAP and delete it. */
 struct heap_elem *
-heap_pop (struct heap *heap, void *aux)
+heap_pop (struct heap *heap)
 {
   ASSERT (heap != NULL);
   if (heap_empty (heap))

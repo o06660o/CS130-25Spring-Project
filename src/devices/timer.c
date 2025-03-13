@@ -104,7 +104,7 @@ timer_sleep (int64_t ticks)
   enum intr_level old_level = intr_disable ();
   struct thread *cur = thread_current ();
   cur->wakeup_tick = start + ticks;
-  heap_push (&sleep_que, &cur->heapelem, NULL);
+  heap_push (&sleep_que, &cur->heapelem);
   thread_block ();
   intr_set_level (old_level);
 }
@@ -277,7 +277,7 @@ timer_wakeup_threads (int64_t ticks)
           = heap_entry (heap_top (&sleep_que), struct thread, heapelem);
       if (t->wakeup_tick > ticks)
         break;
-      heap_pop (&sleep_que, NULL);
+      heap_pop (&sleep_que);
       thread_unblock (t);
     }
 }
