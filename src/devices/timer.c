@@ -259,6 +259,7 @@ real_time_delay (int64_t num, int32_t denom)
   busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
 }
 
+/* The thread with least WAKEUP_TICK is at the top of the heap. */
 static bool
 sleep_que_comp (const struct heap_elem *a, const struct heap_elem *b,
                 void *aux UNUSED)
@@ -268,6 +269,7 @@ sleep_que_comp (const struct heap_elem *a, const struct heap_elem *b,
   return ta->wakeup_tick > tb->wakeup_tick;
 }
 
+/* Wake up all threads whose WAKEUP_TICK is less than or equal to TICKS. */
 static void
 timer_wakeup_threads (int64_t ticks)
 {
