@@ -2,6 +2,7 @@
 #define THREADS_THREAD_H
 
 #include <debug.h>
+#include <heap.h>
 #include <list.h>
 #include <stdint.h>
 
@@ -92,6 +93,10 @@ struct thread
 
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
+
+  /* Shared between thread.c and devices/timer.c. */
+  int64_t wakeup_tick;       /* Time when the thread stops sleeping. */
+  struct heap_elem heapelem; /* Heap element for sleeping queue. */
 
 #ifdef USERPROG
   /* Owned by userprog/process.c. */

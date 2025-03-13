@@ -4,6 +4,7 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include <debug.h>
+#include <heap.h>
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
@@ -24,17 +25,24 @@ static int64_t ticks;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
+/* A priority queue which contains sleeping threads. */
+static struct heap sleep_que;
+
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
+static bool sleep_que_comp (const struct heap_elem *a,
+                            const struct heap_elem *b, void *aux UNUSED);
+static void timer_wakeup_threads (int64_t current_tick);
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
 timer_init (void)
 {
+  heap_init (&sleep_que, sleep_que_comp);
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -92,8 +100,13 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks)
-    thread_yield ();
+
+  enum intr_level old_level = intr_disable ();
+  struct thread *cur = thread_current ();
+  cur->wakeup_tick = start + ticks;
+  heap_push (&sleep_que, &cur->heapelem, NULL);
+  thread_block ();
+  intr_set_level (old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -172,6 +185,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+  timer_wakeup_threads (ticks);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
@@ -243,4 +257,27 @@ real_time_delay (int64_t num, int32_t denom)
      the possibility of overflow. */
   ASSERT (denom % 1000 == 0);
   busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
+}
+
+static bool
+sleep_que_comp (const struct heap_elem *a, const struct heap_elem *b,
+                void *aux UNUSED)
+{
+  struct thread *ta = heap_entry (a, struct thread, heapelem);
+  struct thread *tb = heap_entry (b, struct thread, heapelem);
+  return ta->wakeup_tick > tb->wakeup_tick;
+}
+
+static void
+timer_wakeup_threads (int64_t ticks)
+{
+  while (!heap_empty (&sleep_que))
+    {
+      struct thread *t
+          = heap_entry (heap_top (&sleep_que), struct thread, heapelem);
+      if (t->wakeup_tick > ticks)
+        break;
+      heap_pop (&sleep_que, NULL);
+      thread_unblock (t);
+    }
 }
