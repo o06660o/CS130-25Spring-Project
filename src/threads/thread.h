@@ -97,7 +97,7 @@ struct thread
   struct thread *parent; /* The thread that holds a lock waiting for. */
   struct list locks;     /* Locks this thread own. */
 
-  /* Shared between thread.c and devices/timer.c. */
+  /* Owned by devices/timer.c */
   int64_t wakeup_tick;       /* Time when the thread stops sleeping. */
   struct heap_elem heapelem; /* Heap element for sleeping queue. */
 

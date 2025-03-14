@@ -34,7 +34,6 @@
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
-/* Comparision function to wake threads in a condition variable */
 static bool condvar_less (const struct list_elem *a, const struct list_elem *b,
                           void *aux UNUSED);
 
@@ -313,6 +312,7 @@ struct semaphore_elem
   struct semaphore semaphore; /* This semaphore. */
 };
 
+/* Comparision function to wake threads in a condition variable */
 static bool
 condvar_less (const struct list_elem *a, const struct list_elem *b,
               void *aux UNUSED)

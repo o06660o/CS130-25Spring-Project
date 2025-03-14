@@ -1,4 +1,4 @@
-/* cat.c
+/* cmp.c
 
    Compares two files. */
 

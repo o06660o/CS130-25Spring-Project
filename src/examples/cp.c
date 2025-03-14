@@ -1,6 +1,6 @@
-/* cat.c
+/* cp.c
 
-Copies one file to another. */
+   Copies one file to another. */
 
 #include <stdio.h>
 #include <syscall.h>
