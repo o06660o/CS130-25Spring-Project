@@ -32,6 +32,10 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Comparision function to wake threads in a condition variable */
+static bool condvar_less (const struct list_elem *a, const struct list_elem *b,
+                          void *aux UNUSED);
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -113,11 +117,17 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
+  struct thread *max_waiter = NULL;
   if (!list_empty (&sema->waiters))
-    thread_unblock (
-        list_entry (list_pop_front (&sema->waiters), struct thread, elem));
+    {
+      max_waiter = thread_list_max (&sema->waiters);
+      list_remove (&max_waiter->elem);
+      thread_unblock (max_waiter);
+    }
   sema->value++;
   intr_set_level (old_level);
+  if (max_waiter != NULL && thread_less (thread_current (), max_waiter))
+    thread_yield ();
 }
 
 static void sema_test_helper (void *sema_);
@@ -253,6 +263,18 @@ struct semaphore_elem
   struct semaphore semaphore; /* This semaphore. */
 };
 
+static bool
+condvar_less (const struct list_elem *a, const struct list_elem *b,
+              void *aux UNUSED)
+{
+  ASSERT (a != NULL && b != NULL);
+  struct semaphore_elem *sema_a = list_entry (a, struct semaphore_elem, elem);
+  struct semaphore_elem *sema_b = list_entry (b, struct semaphore_elem, elem);
+  struct thread *ta = thread_list_max (&sema_a->semaphore.waiters);
+  struct thread *tb = thread_list_max (&sema_b->semaphore.waiters);
+  return thread_less (ta, tb);
+}
+
 /* Initializes condition variable COND.  A condition variable
    allows one piece of code to signal a condition and cooperating
    code to receive the signal and act upon it. */
@@ -317,9 +339,11 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (lock_held_by_current_thread (lock));
 
   if (!list_empty (&cond->waiters))
-    sema_up (&list_entry (list_pop_front (&cond->waiters),
-                          struct semaphore_elem, elem)
-                  ->semaphore);
+    {
+      struct list_elem *e = list_max (&cond->waiters, condvar_less, NULL);
+      list_remove (e);
+      sema_up (&list_entry (e, struct semaphore_elem, elem)->semaphore);
+    }
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by

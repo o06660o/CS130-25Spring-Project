@@ -65,7 +65,7 @@ static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
 static void init_thread (struct thread *, const char *name, int priority);
-static bool is_thread (struct thread *) UNUSED;
+static bool is_thread (const struct thread *);
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
@@ -201,6 +201,11 @@ thread_create (const char *name, int priority, thread_func *function,
   /* Add to run queue. */
   thread_unblock (t);
 
+  /* If the new thread has higher priority, the current thread should
+   immediately yield the processor */
+  if (thread_less (thread_current (), t))
+    thread_yield ();
+
   return tid;
 }
 
@@ -335,7 +340,13 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority)
 {
-  thread_current ()->priority = new_priority;
+  struct thread *cur = thread_current ();
+  cur->priority = new_priority;
+  if (list_empty (&ready_list))
+    return;
+  struct thread *max_thread = thread_list_max (&ready_list);
+  if (thread_less (cur, max_thread))
+    thread_yield ();
 }
 
 /* Returns the current thread's priority. */
@@ -440,7 +451,7 @@ running_thread (void)
 
 /* Returns true if T appears to point to a valid thread. */
 static bool
-is_thread (struct thread *t)
+is_thread (const struct thread *t)
 {
   return t != NULL && t->magic == THREAD_MAGIC;
 }
@@ -492,7 +503,11 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    {
+      struct thread *max_thread = thread_list_max (&ready_list);
+      list_remove (&max_thread->elem);
+      return max_thread;
+    }
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -576,6 +591,38 @@ allocate_tid (void)
   lock_release (&tid_lock);
 
   return tid;
+}
+
+/* Comparision of priority for two different threads. */
+bool
+thread_less (const struct thread *a, const struct thread *b)
+{
+  ASSERT (is_thread (a) && is_thread (b));
+  ASSERT (a->tid != b->tid);
+  return a->priority < b->priority;
+}
+
+/* Comparision of priority for two list elements of threads. */
+bool
+thread_list_less (const struct list_elem *a, const struct list_elem *b,
+                  void *aux UNUSED)
+{
+  ASSERT (a != NULL && b != NULL);
+  const struct thread *ta = list_entry (a, struct thread, elem);
+  const struct thread *tb = list_entry (b, struct thread, elem);
+  return thread_less (ta, tb);
+}
+
+/* Returns the thread with highest priority in the list. */
+struct thread *
+thread_list_max (struct list *list)
+{
+  ASSERT (list != NULL);
+  ASSERT (!list_empty (list));
+  struct list_elem *max_elem = list_max (list, thread_list_less, NULL);
+  struct thread *max_thread = list_entry (max_elem, struct thread, elem);
+  ASSERT (is_thread (max_thread));
+  return max_thread;
 }
 
 /* Offset of `stack' member within `struct thread'.

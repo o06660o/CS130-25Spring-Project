@@ -143,4 +143,9 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+bool thread_less (const struct thread *, const struct thread *);
+bool thread_list_less (const struct list_elem *, const struct list_elem *,
+                       void *aux UNUSED);
+struct thread *thread_list_max (struct list *);
+
 #endif /* threads/thread.h */
