@@ -15,6 +15,8 @@
 #include "userprog/process.h"
 #endif
 
+#define max(a, b) ((a) > (b) ? (a) : (b))
+
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -353,7 +355,8 @@ thread_set_priority (int new_priority)
 int
 thread_get_priority (void)
 {
-  return thread_current ()->priority;
+  struct thread *cur = thread_current ();
+  return max (cur->priority, cur->extra_priority);
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -472,6 +475,7 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
+  list_init (&t->locks);
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -599,7 +603,9 @@ thread_less (const struct thread *a, const struct thread *b)
 {
   ASSERT (is_thread (a) && is_thread (b));
   ASSERT (a->tid != b->tid);
-  return a->priority < b->priority;
+  int pa = max (a->priority, a->extra_priority);
+  int pb = max (b->priority, b->extra_priority);
+  return pa < pb;
 }
 
 /* Comparision of priority for two list elements of threads. */

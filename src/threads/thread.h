@@ -93,6 +93,9 @@ struct thread
 
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
+  int extra_priority;    /* Extra priority by priority donation. */
+  struct thread *parent; /* The thread that holds a lock waiting for. */
+  struct list locks;     /* Locks this thread own. */
 
   /* Shared between thread.c and devices/timer.c. */
   int64_t wakeup_tick;       /* Time when the thread stops sleeping. */
