@@ -59,7 +59,7 @@ struct thread
 {
   /* ... */
 
-  /* Shared between thread.c and devices/timer.c. */
+  /* Owned by devices/timer.c. */
   int64_t wakeup_tick;       /* Time when the thread stops sleeping. */
   struct heap_elem heapelem; /* Heap element for sleeping queue. */
 
@@ -131,37 +131,127 @@ Same as A4, we disabled interrupts.
 
 > **B1:** Copy here the declaration of each new or changed `struct` or struct member, global or static variable, `typedef`, or enumeration. Identify the purpose of each in 25 words or less.
 
-*Your answer here.*
+#### New Struct Member to `struct thread`
+
+```c
+struct thread
+{
+  /* ... */
+
+  /* Shared between thread.c and synch.c. */
+   int extra_priority;    /* Extra priority by priority donation. */
+   struct thread *parent; /* The thread that holds a lock waiting for. */
+   struct list locks;     /* Locks this thread own. */
+
+  /* ... */
+}
+```
+
+#### New Struct Member to `struct lock`
+
+```c
+struct lock
+{
+  /* ... */
+
+  struct list_elem elem;      /* List elements used by struct thread. */
+}
+```
 
 > **B2:** Explain the data structure used to track priority donation. Describe how priority donation works in a nested scenario using a detailed textual explanation.
 
-*Your answer here.*
+```text
+   +-------+
+   |ThreadP|
+   +---+---+
+       |
+       |(`locks_own`)
+       |
+    +--+---+     +------+     +------+     +------+
+<---| head |<--->| Lock |<--->| Lock |<--->| tail |<--->
+    +------+     +---+--+     +--+---+     +------+
+                     |           |
+         (`waiters`) |           ~
+                     |
+                 +---+--+     +-------+     +------+
+             <---| head |<--->|ThreadC|<--->| tail |<--->
+                 +------+     +---+---+     +------+
+                                  |
+                                  ~
+```
+
+A thread can only be blocked directly by one lock. If we define the holder of
+that lock as the parent of this thread, then the relationship of threads
+becomes several trees, whose roots are running or ready to run threads.
+
+- When a thread is blocked, we climb up the tree until we reached the root,
+  donating its priority along the way. Each jump climbs two levels up because
+  we record the parent thread instead of lock.
+- When a lock is released, we iterate its direct children to find the new
+  donated priority. There is actually no need to always search the whole tree.
 
 ### Algorithms
 
 > **B3:** How do you ensure that the highest priority thread waiting for a lock, semaphore, or condition variable wakes up first?
 
-*Your answer here.*
+We iterate through the waiting list to find the thread with highest priority.
+The priority of each thread is maintained carefully.
 
 > **B4:** Describe the sequence of events when a call to `lock_acquire()` causes a priority donation. How is nested donation handled?
 
-*Your answer here.*
+When a thread is blocked, we climb up the tree until we reached the root,
+donating its priority along the way. Each jump climbs two levels up because
+we record the parent thread instead of lock.
 
 > **B5:** Describe the sequence of events when `lock_release()` is called on a lock that a higher-priority thread is waiting for.
 
-*Your answer here.*
+First we have to reset the parent-child relationship connected by that lock.
+
+Then we iterate its direct children to find the new donated priority. There
+is actually no need to always search the whole tree because we have maintained
+a variable `extra_priority` which contains the maximum priority in a subtree
+rooted at that thread.
+
+Finally, we called `sema_up()` to wake up the correct thread.
 
 ### Synchronization
 
 > **B6:** Describe a potential race in `thread_set_priority()` and explain how your implementation avoids it. Can you use a lock to avoid this race?
 
-*Your answer here.*
+It's a possible implementation of `thread_set_priority()`
+
+```c
+void
+thread_set_priority (int new_priority)
+{
+  struct thread *cur = thread_current ();
+  cur->priority = new_priority;
+  struct thread *max_waiting = thread_list_max (&ready_list);
+  if (thread_less (cur, max_waiting))
+    thread_yield ();
+}
+```
+
+If a thread of higher priority is inserted into the ready list between the
+execution of `struct thread *max_waiting = thread_list_max (&ready_list)`
+and `if (thread_less (cur, max_waiting))`, that thread may not be scheduled
+correctly. Our implementation disabled interrupts to avoid this.
+
+A lock is not suitable here. Suppose we used a lock `ready_list_lock` to
+ensure atomicity of accessing `ready_list`. When a thread gets preempted
+after acquiring that lock, then he will never be able to release that lock
+because the current thread is unable to make the preempted thread out of
+ready list. (A possible situation of deadlock.)
 
 ### Rationale
 
 > **B7:** Why did you choose this design? In what ways is it superior to another design you considered?
 
-*Your answer here.*
+We have considered making the ready threads in a priority queue based on heap.
+However, the priority of a thread may change after entering queue, thus breaking
+the structure of heap. We do have a solution to this problem. However, that
+leads to more memory usage, and we think memory is more valuable than time
+in pintos.
 
 ---
 
