@@ -2,6 +2,7 @@
 #define THREADS_THREAD_H
 
 #include <debug.h>
+#include <fixed.h>
 #include <heap.h>
 #include <list.h>
 #include <stdint.h>
@@ -24,6 +25,17 @@ typedef int tid_t;
 #define PRI_MIN 0      /* Lowest priority. */
 #define PRI_DEFAULT 31 /* Default priority. */
 #define PRI_MAX 63     /* Highest priority. */
+
+/* Thread nice values. */
+#define NICE_MIN -20   /* Lowest nice value. */
+#define NICE_DEFAULT 0 /* Default nice value. */
+#define NICE_MAX 20    /* Highest nice value. */
+
+/* Thread recent_cpu. */
+#define RECENT_CPU_DEFAULT INT_TO_FP (0) /* Default recent_cpu. */
+
+/* System load average. */
+#define LOAD_AVG_DEFAULT INT_TO_FP (0) /* Default load average. */
 
 /* A kernel thread or user process.
 
@@ -89,6 +101,8 @@ struct thread
   char name[16];             /* Name (for debugging purposes). */
   uint8_t *stack;            /* Saved stack pointer. */
   int priority;              /* Priority. */
+  int nice;                  /* Nice value. */
+  fp32_t recent_cpu;         /* Recent CPU. */
   struct list_elem allelem;  /* List element for all threads list. */
 
   /* Shared between thread.c and synch.c. */
@@ -145,6 +159,8 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+void thread_calc_recent_cpu (struct thread *t, void *aux UNUSED);
+void thread_calc_load_avg (void);
 
 bool thread_less (const struct thread *, const struct thread *);
 bool thread_list_less (const struct list_elem *, const struct list_elem *,
