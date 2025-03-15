@@ -342,13 +342,16 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority)
 {
+  enum intr_level old_level = intr_disable ();
   struct thread *cur = thread_current ();
   cur->priority = new_priority;
-  if (list_empty (&ready_list))
-    return;
-  struct thread *max_thread = thread_list_max (&ready_list);
-  if (thread_less (cur, max_thread))
-    thread_yield ();
+  if (!list_empty (&ready_list))
+    {
+      struct thread *max_thread = thread_list_max (&ready_list);
+      if (thread_less (cur, max_thread))
+        thread_yield ();
+    }
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -508,8 +511,10 @@ next_thread_to_run (void)
     return idle_thread;
   else
     {
+      enum intr_level old_level = intr_disable ();
       struct thread *max_thread = thread_list_max (&ready_list);
       list_remove (&max_thread->elem);
+      intr_set_level (old_level);
       return max_thread;
     }
 }

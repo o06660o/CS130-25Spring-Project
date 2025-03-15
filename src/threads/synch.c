@@ -129,9 +129,9 @@ sema_up (struct semaphore *sema)
       thread_unblock (max_waiter);
     }
   sema->value++;
-  intr_set_level (old_level);
   if (max_waiter != NULL && thread_less (thread_current (), max_waiter))
     thread_yield ();
+  intr_set_level (old_level);
 }
 
 static void sema_test_helper (void *sema_);
@@ -215,8 +215,11 @@ lock_acquire (struct lock *lock)
   donate_up (cur, 0);
 
   sema_down (&lock->semaphore);
+
+  enum intr_level old_level = intr_disable ();
   lock->holder = thread_current ();
   list_push_back (&lock->holder->locks, &lock->elem);
+  intr_set_level (old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -240,8 +243,10 @@ lock_try_acquire (struct lock *lock)
   success = sema_try_down (&lock->semaphore);
   if (success)
     {
+      enum intr_level old_level = intr_disable ();
       lock->holder = thread_current ();
       list_push_back (&lock->holder->locks, &lock->elem);
+      intr_set_level (old_level);
     }
   return success;
 }
@@ -256,6 +261,8 @@ lock_release (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
+
+  enum intr_level old_level = intr_disable ();
 
   /* Reset parent-child relationship. */
   for (struct list_elem *it = list_begin (&lock->semaphore.waiters);
@@ -280,6 +287,8 @@ lock_release (struct lock *lock)
     }
 
   lock->holder = NULL;
+  intr_set_level (old_level);
+
   sema_up (&lock->semaphore);
 }
 
@@ -367,7 +376,11 @@ cond_wait (struct condition *cond, struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   sema_init (&waiter.semaphore, 0);
+
+  enum intr_level old_level = intr_disable ();
   list_push_back (&cond->waiters, &waiter.elem);
+  intr_set_level (old_level);
+
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
@@ -390,8 +403,11 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
 
   if (!list_empty (&cond->waiters))
     {
+      enum intr_level old_level = intr_disable ();
       struct list_elem *e = list_max (&cond->waiters, condvar_less, NULL);
       list_remove (e);
+      intr_set_level (old_level);
+
       sema_up (&list_entry (e, struct semaphore_elem, elem)->semaphore);
     }
 }
