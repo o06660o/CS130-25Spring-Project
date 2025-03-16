@@ -77,7 +77,7 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-static int __calc_mlfq_priority (struct thread *t);
+static int calc_mlfq_priority (struct thread *t);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -148,7 +148,7 @@ thread_tick (void)
   if (thread_mlfqs && t != idle_thread)
     {
       t->recent_cpu = FP_ADD_INT (t->recent_cpu, 1);
-      t->priority = __calc_mlfq_priority (t);
+      t->priority = calc_mlfq_priority (t);
     }
 
   /* Enforce preemption. */
@@ -174,11 +174,7 @@ thread_print_stats (void)
    before thread_create() returns.  Contrariwise, the original
    thread may run for any amount of time before the new thread is
    scheduled.  Use a semaphore or some other form of
-   synchronization if you need to ensure ordering.
-
-   The code provided sets the new thread's `priority' member to
-   PRIORITY, but no actual priority scheduling is implemented.
-   Priority scheduling is the goal of Problem 1-3. */
+   synchronization if you need to ensure ordering. */
 tid_t
 thread_create (const char *name, int priority, thread_func *function,
                void *aux)
@@ -219,7 +215,7 @@ thread_create (const char *name, int priority, thread_func *function,
   thread_unblock (t);
 
   /* If the new thread has higher priority, the current thread should
-   immediately yield the processor */
+   immediately yield the processor. */
   if (thread_less (thread_current (), t))
     thread_yield ();
 
@@ -387,7 +383,7 @@ thread_set_nice (int nice)
   enum intr_level old_level = intr_disable ();
   struct thread *cur = thread_current ();
   cur->nice = nice;
-  cur->priority = __calc_mlfq_priority (cur);
+  cur->priority = calc_mlfq_priority (cur);
   if (!list_empty (&ready_list))
     {
       struct thread *max_thread = thread_list_max (&ready_list);
@@ -503,10 +499,21 @@ init_thread (struct thread *t, const char *name, int priority)
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *)t + PGSIZE;
-  t->nice = NICE_DEFAULT;
-  t->recent_cpu = RECENT_CPU_DEFAULT;
   if (thread_mlfqs)
-    t->priority = PRI_MAX;
+    {
+      if (t == initial_thread)
+        {
+          t->nice = NICE_DEFAULT;
+          t->recent_cpu = RECENT_CPU_DEFAULT;
+        }
+      else
+        {
+          struct thread *parent = thread_current ();
+          t->nice = parent->nice;
+          t->recent_cpu = parent->recent_cpu;
+        }
+      t->priority = PRI_MAX;
+    }
   else
     t->priority = priority;
   t->extra_priority = 0;
@@ -674,10 +681,13 @@ uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
 /* Calculate mlfq priority for thread T. */
 static int
-__calc_mlfq_priority (struct thread *t)
+calc_mlfq_priority (struct thread *t)
 {
+  ASSERT (is_thread (t));
   if (t == idle_thread)
     return t->priority;
+  /* The coefficients 1/4 and 2 on RECENT_CPU and NICE, respectively, have
+     been found to work well in practice but lack deeper meaning. */
   int result
       = PRI_MAX - FP_TO_INT (FP_DIV_INT (t->recent_cpu, 4)) - t->nice * 2;
   result = min (result, PRI_MAX);
@@ -689,10 +699,11 @@ __calc_mlfq_priority (struct thread *t)
 void
 thread_calc_recent_cpu (struct thread *t, void *aux UNUSED)
 {
+  /* tmp = (2 * load_avg) / (2 * load_avg + 1) */
   fp32_t tmp = FP_DIV (FP_MUL_INT (load_avg, 2),
                        FP_ADD_INT (FP_MUL_INT (load_avg, 2), 1));
   t->recent_cpu = FP_ADD_INT (FP_MUL (tmp, t->recent_cpu), t->nice);
-  t->priority = __calc_mlfq_priority (t);
+  t->priority = calc_mlfq_priority (t);
 }
 
 /* Calculate load_avg. */
