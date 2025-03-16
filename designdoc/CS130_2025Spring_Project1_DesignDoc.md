@@ -261,46 +261,110 @@ in pintos.
 
 > **C1:** Copy here the declaration of each new or changed `struct` or struct member, global or static variable, `typedef`, or enumeration. Identify the purpose of each in 25 words or less.
 
-*Your answer here.*
+#### Fixed Point
+
+```c
+/* Fixed-Point Arithmetic. (17.14 format) */
+typedef int32_t fp32_t;
+```
+
+#### New Struct Member to `struct thread`
+
+```c
+struct thread
+{
+  /* ... */
+
+  /* Owned by thread.c. */
+  int nice;                  /* Nice value. */
+  fp32_t recent_cpu;         /* Recent CPU. */
+
+  /* ... */
+}
+```
+
+#### New Global Variable in `threads/thread.c`
+
+```c
+/* System load average, for mlfq. */
+static fp32_t load_avg;
+```
 
 ### Algorithms
 
 > **C2:** Suppose threads A, B, and C have nice values 0, 1, and 2. Each has a `recent_cpu` value of 0. Fill in the table below showing the scheduling decision and the priority and `recent_cpu` values for each thread after each given number of timer ticks:
 
-*Fill in the table.*
-
 | Timer Ticks | recent_cpu A | recent_cpu B | recent_cpu C | Priority A | Priority B | Priority C | Thread to Run |
 |-------------|--------------|--------------|--------------|------------|------------|------------|---------------|
-| 0           |              |              |              |            |            |            |               |
-| 4           |              |              |              |            |            |            |               |
-| 8           |              |              |              |            |            |            |               |
-| 12          |              |              |              |            |            |            |               |
-| 16          |              |              |              |            |            |            |               |
-| 20          |              |              |              |            |            |            |               |
-| 24          |              |              |              |            |            |            |               |
-| 28          |              |              |              |            |            |            |               |
-| 32          |              |              |              |            |            |            |               |
-| 36          |              |              |              |            |            |            |               |
+| 0           | 0            | 0            | 0            | 63         | 61         | 59         | A             |
+| 4           | 4            | 0            | 0            | 62         | 61         | 59         | A             |
+| 8           | 8            | 0            | 0            | 61         | 61         | 59         | A             |
+| 12          | 12           | 0            | 0            | 60         | 61         | 59         | B             |
+| 16          | 12           | 4            | 0            | 60         | 60         | 59         | B             |
+| 20          | 12           | 8            | 0            | 60         | 59         | 59         | A             |
+| 24          | 16           | 8            | 0            | 59         | 59         | 59         | A             |
+| 28          | 20           | 8            | 0            | 58         | 59         | 59         | C (FIFO)      |
+| 32          | 20           | 8            | 4            | 58         | 59         | 58         | B             |
+| 36          | 20           | 12           | 4            | 58         | 58         | 58         | A             |
+
+<!--
+
+草稿
+
+timer  recent_cpu    priority   thread
+ticks   A   B   C   A   B   C   to run
+-----  --  --  --  --  --  --   ------
+ 0      0   0   0  63  61  59   A
+ 4      4   0   0  62  61  59   A
+ 8      8   0   0  61  61  59   A
+12     12   0   0  60  61  59   B
+16     12   4   0  60  60  59   B
+20     12   8   0  60  59  59   A
+24     16   8   0  59  59  59   A
+28     20   8   0  58  59  59   C (FIFO)
+32     20   8   4  58  59  58   B
+36     20  12   4  58  58  58   A
+-->
 
 > **C3:** Did any ambiguities in the scheduler specification make values in the table uncertain? If so, what rule did you use to resolve them? Does this match the behavior of your scheduler?
 
-*Your answer here.*
+When two threads have the same priority, the next thread to run is uncertain.
+We use First-in-First-out rule to manage order. (Assuming that the threads are
+created in the order of A->B->C) This rule match our scheduler, since we
+select the one with maximum priority and appears the earliest in the list.
 
 > **C4:** How is the way you divided the cost of scheduling between code inside and outside interrupt context likely to affect performance?
 
-*Your answer here.*
+Incrementing `recent_cpu` by 1 needs to be done every tick, and recalculate
+`priority` needs to be done every fourth tick. Those two are put outside of
+interrupt context for efficiency. Updating `load_avg` and iterating through
+all threads for `recent_cpu` only happens once per second, thus we put them
+inside the interrupt context.
 
 ### Rationale
 
 > **C5:** Briefly critique your design, pointing out advantages and disadvantages in your design choices. If you were to have extra time to work on this part of the project, how might you choose to refine or improve your design?
 
-*Your answer here.*
+#### Advantages
+
+Use a Pairing Heap to optimize the time complexity in the implementation of
+alarm clock.
+
+#### Disadvantages
+
+In priority scheduleing, we iterate through all ready threads to find the one
+with maximux priority.
+
+If we have extra time, we might choose to write more tests to check our design.
 
 ---
 
 > **C6:** The assignment explains arithmetic for fixed-point math in detail, but it leaves it open to you to implement it. Why did you decide to implement it the way you did? If you created an abstraction layer for fixed-point math (i.e., an abstract data type and/or a set of functions or macros to manipulate fixed-point numbers), why did you do so? If not, why not?
 
-*Your answer here.*
+We create a file `fixed.h` and wrap common fixed-point arithmetic operations in
+macros. It makes the code easier to read and avoids the cost of function calls.
+In addition, such lib makes it possible to expand 32-bit fixed point to 64-bit
+in the future.
 
 ---
 
@@ -308,4 +372,4 @@ in pintos.
 
 > Do you have any suggestions for the TAs to more effectively assist students, either for future quarters or the remaining projects? Any other comments?
 
-*Your answer here.*
+None.
