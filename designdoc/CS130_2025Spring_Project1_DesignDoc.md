@@ -27,14 +27,14 @@ None.
 
 #### Pairing Heap
 
-A data structure that satisfies the heap property by using merge operation.
+A data structure that maintains the heap property through constant-time merge operations.
 
 ```c
 /* Heap element. */
 struct heap_elem
 {
   struct heap_elem *child;   /* Child element. */
-  struct heap_elem *sibling; /* Next brother element. */
+  struct heap_elem *sibling; /* Next sibling element. */
 };
 
 /* Compares the value of two heap elements A and B, given

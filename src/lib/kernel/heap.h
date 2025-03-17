@@ -3,7 +3,8 @@
 
 /* Pairing Heap.
 
-  A data structure that satisfies the heap property by using merge operation.
+  A data structure that maintains the heap property through constant-time merge
+ operations.
 
  Operations supported:
    - Push: Push a new element to the heap.
@@ -18,7 +19,7 @@
 struct heap_elem
 {
   struct heap_elem *child;   /* Child element. */
-  struct heap_elem *sibling; /* Next brother element. */
+  struct heap_elem *sibling; /* Next sibling element. */
 };
 
 /* Converts pointer to heap element HEAP_ELEM into a pointer to
