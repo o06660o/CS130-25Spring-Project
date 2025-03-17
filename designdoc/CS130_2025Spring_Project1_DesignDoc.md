@@ -5,7 +5,7 @@
 Please provide the details for your group below, including your group's name and the names and email addresses of all members.
 
 - **Group Name**: *[printf("team")]*
-- **Member 1**: Zirui Wang`<wangzr2024@shanghaitech.edu.cn>`
+- **Member 1**: Zirui Wang `<wangzr2024@shanghaitech.edu.cn>`
 - **Member 2**: Xing Wu `<wuxing2024@shanghaitech.edu.cn>`
 
 ---
