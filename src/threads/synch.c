@@ -129,7 +129,8 @@ sema_up (struct semaphore *sema)
       thread_unblock (max_waiter);
     }
   sema->value++;
-  if (max_waiter != NULL && thread_less (thread_current (), max_waiter))
+  if (!intr_context () && max_waiter != NULL
+      && thread_less (thread_current (), max_waiter))
     thread_yield ();
   intr_set_level (old_level);
 }
