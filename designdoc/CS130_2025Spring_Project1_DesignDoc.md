@@ -294,6 +294,9 @@ static fp32_t load_avg;
 
 > **C2:** Suppose threads A, B, and C have nice values 0, 1, and 2. Each has a `recent_cpu` value of 0. Fill in the table below showing the scheduling decision and the priority and `recent_cpu` values for each thread after each given number of timer ticks:
 
+In pintos, `src/devices/timer.h` has defined `TIMER_FREQ` to be $100$.
+Therfore, we assume that it is greater than $36$.
+
 | Timer Ticks | recent_cpu A | recent_cpu B | recent_cpu C | Priority A | Priority B | Priority C | Thread to Run |
 |-------------|--------------|--------------|--------------|------------|------------|------------|---------------|
 | 0           | 0            | 0            | 0            | 63         | 61         | 59         | A             |
