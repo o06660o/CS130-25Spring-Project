@@ -109,7 +109,7 @@ Same as A4, we disabled interrupts.
 
 > **A6:** Why did you choose this design? In what ways is it superior to another design you considered?
 
-- We have considered using a List to implement the sleeping queue. Howerver,
+- We have considered using a List to implement the sleeping queue. However,
   the Pairing Heap has advantage of time complexity.
 - Compared with creating an array with fixed size or allocating memory
   dynamically, we use an approach similar to the list declared in
@@ -345,15 +345,12 @@ inside the interrupt context.
 
 > **C5:** Briefly critique your design, pointing out advantages and disadvantages in your design choices. If you were to have extra time to work on this part of the project, how might you choose to refine or improve your design?
 
-#### Advantages
-
-Use a Pairing Heap to optimize the time complexity in the implementation of
-alarm clock.
-
-#### Disadvantages
-
 In priority scheduleing, we iterate through all ready threads to find the one
-with maximux priority.
+with maximux priority. Maybe a more advanced data structre (not the pairing
+heap we have implemented since it's unable to modify arbitrary elements)
+can have better time performace. However, we just choose list since it's easier
+to write, avoiding potential bugs. After all, the core of pintos is operating
+systems, not data structures.
 
 If we have extra time, we might choose to write more tests to check our design.
 
