@@ -348,14 +348,14 @@ inside the interrupt context.
 
 > **C5:** Briefly critique your design, pointing out advantages and disadvantages in your design choices. If you were to have extra time to work on this part of the project, how might you choose to refine or improve your design?
 
-We did not implement 64 queues. Instead, we reused the `ready_list` from Task 2. 
-This approach reduces memory usage and maintains consistency with Task 2's 
-implementation. However, it resulted in a time complexity of $\mathcal{O}(n)$ 
-for finding the highest-priority thread, whereas using 64 queues would achieve 
+We did not implement 64 queues. Instead, we reused the `ready_list` from Task 2.
+This approach reduces memory usage and maintains consistency with Task 2's
+implementation. However, it resulted in a time complexity of $\mathcal{O}(n)$
+for finding the highest-priority thread, whereas using 64 queues would achieve
 $\mathcal{O}(1)$ time complexity.
 
-Similar to Task 2, we considered using a priority queue based on a heap. However, 
-frequent priority changes could break the heap structure, and the solution to 
+Similar to Task 2, we considered using a priority queue based on a heap. However,
+frequent priority changes could break the heap structure, and the solution to
 maintain heap integrity might be too complex for pintos.
 
 If we have extra time, we might choose to write more tests to check our design.
