@@ -3,6 +3,10 @@
 
 #include "threads/thread.h"
 
+#define USERPROG_MAX 500 /* Max number of living user programs. */
+#define CMDLEN_MAX 4096  /* Max length of command line. */
+#define ARGV_MAX 64      /* Max number of arguments. */
+
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);
 void process_exit (void);

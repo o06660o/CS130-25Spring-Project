@@ -1,4 +1,5 @@
 #include "userprog/process.h"
+#include "devices/timer.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -38,10 +39,20 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  /* Make another copy of `fn_copy` to get the correct program name.
+     Otherwise it will be modified by `strtok_r()`. */
+  char *fn_copy2 = palloc_get_page (0);
+  if (fn_copy2 == NULL)
+    return TID_ERROR;
+  strlcpy (fn_copy2, fn_copy, PGSIZE);
+  char *save_ptr;
+  char *name = strtok_r (fn_copy2, " ", &save_ptr);
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
+  palloc_free_page (fn_copy2);
   return tid;
 }
 
@@ -51,20 +62,64 @@ static void
 start_process (void *file_name_)
 {
   char *file_name = file_name_;
+  ASSERT (strlen (file_name) + 1 < CMDLEN_MAX);
   struct intr_frame if_;
   bool success;
+
+  /* Parse arguments. */
+  int argc = 0;
+  char *argv[ARGV_MAX + 1];
+  for (char *save_ptr, *arg = strtok_r (file_name, " ", &save_ptr);
+       arg != NULL && argc < ARGV_MAX; arg = strtok_r (NULL, " ", &save_ptr))
+    argv[argc++] = arg;
+  argv[argc] = NULL;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  success = load (argv[0], &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
   if (!success)
-    thread_exit ();
+    {
+      palloc_free_page (file_name);
+      thread_exit ();
+    }
+
+  /* Push arguments into user stack. */
+  uint8_t *esp = if_.esp;
+  esp = (uint8_t *)((uintptr_t)esp & ~3); /* Round down. */
+  char *argv_ptrs[argc + 1];
+  for (int i = argc - 1; i >= 0; i--) /* `argv[i][...]`. */
+    {
+      size_t len = strlen (argv[i]) + 1;
+      esp -= len;
+      memcpy (esp, argv[i], len);
+      argv_ptrs[i] = (char *)esp;
+    }
+  argv_ptrs[argc] = NULL;
+  esp = (uint8_t *)((uintptr_t)esp & ~3); /* Round again. */
+  for (int i = argc; i >= 0; i--)         /* `argv[i]`. */
+    {
+      esp -= sizeof (char *);
+      *(char **)esp = argv_ptrs[i];
+    }
+  char **argv0 = (char **)esp; /* `argv`. */
+  esp -= sizeof (char **);
+  *(char ***)esp = argv0;
+  esp -= sizeof (int); /* `argc`. */
+  *(int *)esp = argc;
+  esp -= sizeof (void *); /* Return address. */
+  *(void **)esp = NULL;
+#ifdef DEBUG
+  size_t buf_size = (uint8_t *)if_.esp - esp;
+  hex_dump ((uintptr_t)esp, esp, buf_size, true);
+#endif
+  if_.esp = esp;
+
+  palloc_free_page (file_name);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -88,6 +143,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED)
 {
+  timer_sleep (TIMER_FREQ);
   return -1;
 }
 
