@@ -39,8 +39,8 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
-  /* Make another copy of `fn_copy` to get the correct program name.
-     Otherwise it will be modified by `strtok_r()`. */
+  /* Make another copy of FN_COPY to get the correct program name.
+     Otherwise it will be modified by strtok_r(). */
   char *fn_copy2 = palloc_get_page (0);
   if (fn_copy2 == NULL)
     return TID_ERROR;
@@ -92,7 +92,7 @@ start_process (void *file_name_)
   uint8_t *esp = if_.esp;
   esp = (uint8_t *)((uintptr_t)esp & ~3); /* Round down. */
   char *argv_ptrs[argc + 1];
-  for (int i = argc - 1; i >= 0; i--) /* `argv[i][...]`. */
+  for (int i = argc - 1; i >= 0; i--) /* argv[i][...]. */
     {
       size_t len = strlen (argv[i]) + 1;
       esp -= len;
@@ -101,15 +101,15 @@ start_process (void *file_name_)
     }
   argv_ptrs[argc] = NULL;
   esp = (uint8_t *)((uintptr_t)esp & ~3); /* Round again. */
-  for (int i = argc; i >= 0; i--)         /* `argv[i]`. */
+  for (int i = argc; i >= 0; i--)         /* argv[i]. */
     {
       esp -= sizeof (char *);
       *(char **)esp = argv_ptrs[i];
     }
-  char **argv0 = (char **)esp; /* `argv`. */
+  char **argv0 = (char **)esp; /* argv. */
   esp -= sizeof (char **);
   *(char ***)esp = argv0;
-  esp -= sizeof (int); /* `argc`. */
+  esp -= sizeof (int); /* argc. */
   *(int *)esp = argc;
   esp -= sizeof (void *); /* Return address. */
   *(void **)esp = NULL;
