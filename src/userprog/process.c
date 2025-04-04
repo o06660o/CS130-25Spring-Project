@@ -149,10 +149,13 @@ process_wait (tid_t child_tid)
 
 /* Free the current process's resources. */
 void
-process_exit (void)
+process_exit (int status)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  /* Process termination message. */
+  printf ("%s: exit(%d)\n", cur->name, status);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -170,6 +173,9 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
+  /* In pintos, every process only own one thread. */
+  thread_exit ();
 }
 
 /* Sets up the CPU for running user code in the current
