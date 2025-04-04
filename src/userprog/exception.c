@@ -3,7 +3,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/gdt.h"
-#include "userprog/syscall.h"
+#include "userprog/process.h"
 #include <inttypes.h>
 #include <stdio.h>
 
@@ -153,7 +153,7 @@ page_fault (struct intr_frame *f)
   /* The kernel thread is trying to access the invalid address passed
      by the user program. */
   if (!user && is_user_vaddr (fault_addr))
-    syscall_exit (-1);
+    process_exit (-1);
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

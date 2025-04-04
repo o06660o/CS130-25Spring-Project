@@ -13,8 +13,8 @@
 #define READ(esp, delta, type)                                                \
   (*(type *)read_data (esp, &delta, sizeof (type)))
 static void *read_data (const void *esp, size_t *delta, size_t size);
-static bool is_valid_ptr (const void *ptr) UNUSED;
-static bool is_valid_str (const char *str, size_t maxlen) UNUSED;
+static bool is_valid_str (const char *str, size_t maxlen);
+static bool is_valid_buf (const void *ptr, size_t size);
 
 /* System calls. */
 static void syscall_handler (struct intr_frame *);
@@ -38,13 +38,7 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-void
-syscall_exit (int status)
-{
-  exit_ (status);
-}
-
-/* Reads data from the user stack. Only checks that the address is not a
+/* Reads data from the user stack. Only checks that the address is not
    kernel address. */
 static void *
 read_data (const void *esp, size_t *delta, size_t size)
@@ -56,6 +50,32 @@ read_data (const void *esp, size_t *delta, size_t size)
     exit_ (-1);
   *delta += size;
   return st;
+}
+
+/* Checks if the string is not too long. If it uses kernel memory or points to
+   NULL, the process will be terminated immediately. */
+static bool
+is_valid_str (const char *str, size_t maxlen)
+{
+  if (str == NULL) /* XXX: should NULL be allowed? */
+    exit_ (-1);
+  for (size_t i = 0; i < maxlen; i++)
+    {
+      if (is_kernel_vaddr (str + i))
+        exit_ (-1);
+      if (str[i] == '\0')
+        return true; /* Ok. */
+    }
+  return false; /* Too long if we reach here. */
+}
+
+/* Checks if the buffer only uses user momory. Won't terminate the process. */
+static bool
+is_valid_buf (const void *ptr, size_t size)
+{
+  if (ptr >= PHYS_BASE || (void *)((uint8_t *)ptr + size) > PHYS_BASE)
+    return false;
+  return true;
 }
 
 /* The syscall handler, which is called when the user program pushes data into
@@ -175,39 +195,46 @@ exit_ (int status)
 
 /* The wait syscall. */
 static int
-wait_ (pid_t pid UNUSED)
+wait_ (pid_t pid)
 {
   return process_wait (pid);
 }
 
 /* The exec syscall. */
 static pid_t
-exec_ (const char *cmd_line UNUSED)
+exec_ (const char *cmd_line)
 {
-  // TODO
-  return -1;
+  if (!is_valid_str (cmd_line, CMDLEN_MAX))
+    exit_ (-1);
+  return process_execute (cmd_line);
 }
 
 /* The create syscall. */
 static bool
-create_ (const char *file UNUSED, unsigned initial_size UNUSED)
+create_ (const char *file, unsigned initial_size UNUSED)
 {
+  if (!is_valid_str (file, NAME_MAX + 1))
+    return false; /* File name too long. */
   // TODO
   return false;
 }
 
 /* The remove syscall. */
 static bool
-remove_ (const char *file UNUSED)
+remove_ (const char *file)
 {
+  if (!is_valid_str (file, NAME_MAX + 1))
+    return false; /* File name too long. */
   // TODO
   return false;
 }
 
 /* The open syscall. */
 static int
-open_ (const char *file UNUSED)
+open_ (const char *file)
 {
+  if (!is_valid_str (file, NAME_MAX + 1))
+    return false; /* File name too long. */
   // TODO
   return -1;
 }
@@ -222,8 +249,10 @@ filesize_ (int fd UNUSED)
 
 /* The read syscall. */
 static int
-read_ (int fd UNUSED, void *buffer UNUSED, unsigned size UNUSED)
+read_ (int fd UNUSED, void *buffer, unsigned size)
 {
+  if (!is_valid_buf (buffer, size))
+    exit_ (-1);
   // TODO
   return -1;
 }
@@ -232,6 +261,8 @@ read_ (int fd UNUSED, void *buffer UNUSED, unsigned size UNUSED)
 static int
 write_ (int fd, const void *buffer, unsigned size)
 {
+  if (!is_valid_buf (buffer, size))
+    exit_ (-1);
   // TODO
   if (fd == STDOUT_FILENO)
     {

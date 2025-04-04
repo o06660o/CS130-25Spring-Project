@@ -141,13 +141,13 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid)
+process_wait (tid_t child_tid UNUSED)
 {
   timer_sleep (TIMER_FREQ);
   return 0;
 }
 
-/* Free the current process's resources. */
+/* Free the current process's resources and print terminate message. */
 void
 process_exit (int status)
 {
