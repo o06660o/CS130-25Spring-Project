@@ -49,11 +49,13 @@ syscall_exit (int status)
 static void *
 read_data (const void *esp, size_t *delta, size_t size)
 {
-  if (is_kernel_vaddr (esp + size))
+  void *st = (void *)((uint8_t *)esp + *delta);
+  void *ed = (void *)((uint8_t *)st + size);
+  /* We also check the start pointer since st + size might cause overflow. */
+  if (st >= PHYS_BASE || ed > PHYS_BASE) /* ed == PHYS_BASE is allowed. */
     exit_ (-1);
-  void *ret = (void *)((uint8_t *)esp + *delta);
   *delta += size;
-  return ret;
+  return st;
 }
 
 /* The syscall handler, which is called when the user program pushes data into
