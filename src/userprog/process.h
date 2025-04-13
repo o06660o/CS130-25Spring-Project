@@ -14,8 +14,8 @@ struct exit_data
   int exit_code;             /* The exit code of the thread. */
   bool called_process_wait;  /* Whether process_wait() has been called. */
   struct thread *father;     /* The father thread of the thread. */
-  struct hash_elem hashelem; /* The hash element stored in hash_exit_data. */
-  struct list_elem listelem; /* The list element stored in ch_exit_data. */
+  struct hash_elem hashelem; /* The hash element stored in `hash_exit_data'. */
+  struct list_elem listelem; /* The list element stored in `ch_exit_data'. */
   struct semaphore die_sema; /* Wait for the thread to die. */
 };
 

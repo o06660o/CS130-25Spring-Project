@@ -658,7 +658,7 @@ allocate_tid (void)
   return tid;
 }
 
-/* Find thread by its thread id, iterate `all_list` in reverse order.
+/* Find thread by its thread id, iterate `all_list' in reverse order.
    Therefore it's quite efficient to search for a newly created thread. */
 struct thread *
 tid_to_thread (tid_t tid)

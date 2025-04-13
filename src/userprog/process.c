@@ -599,7 +599,7 @@ install_page (void *upage, void *kpage, bool writable)
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
-/* Find the exit data by tid. */
+/* Find the exit data by TID. */
 struct exit_data *
 tid_to_exit_data (tid_t tid)
 {
@@ -616,6 +616,7 @@ tid_hash (tid_t tid)
   return tid;
 }
 
+/* Helper function for hash table. */
 static unsigned
 hash_func (const struct hash_elem *elem, void *aux UNUSED)
 {
@@ -623,6 +624,7 @@ hash_func (const struct hash_elem *elem, void *aux UNUSED)
   return tid_hash (data->tid);
 }
 
+/* Helper function for hash table. */
 static bool
 hash_less (const struct hash_elem *lhs, const struct hash_elem *rhs,
            void *aux UNUSED)
