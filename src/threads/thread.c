@@ -299,6 +299,19 @@ void
 thread_exit (void)
 {
   ASSERT (!intr_context ());
+#ifdef USERPROG
+  /* Clear the children's exit data. */
+  struct thread *cur = thread_current ();
+  struct list_elem *st = list_begin (&cur->ch_exit_data);
+  struct list_elem *ed = list_end (&cur->ch_exit_data);
+  for (struct list_elem *it = st; it != ed;)
+    {
+      struct exit_data *data = list_entry (it, struct exit_data, listelem);
+      it = list_next (it);
+      ASSERT (data != NULL);
+      destroy_exit_data (data);
+    }
+#endif
 
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
@@ -516,6 +529,14 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->locks);
   t->magic = THREAD_MAGIC;
 
+#ifdef USERPROG
+  t->creator = t == initial_thread ? NULL : thread_current ();
+  list_init (&t->ch_exit_data);
+
+  t->ch_load_status = LOAD_READY;
+  sema_init (&t->ch_load_sema, 0);
+#endif
+
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -635,6 +656,28 @@ allocate_tid (void)
   lock_release (&tid_lock);
 
   return tid;
+}
+
+/* Find thread by its thread id, iterate `all_list` in reverse order.
+   Therefore it's quite efficient to search for a newly created thread. */
+struct thread *
+tid_to_thread (tid_t tid)
+{
+  ASSERT (tid != TID_ERROR);
+  struct thread *ret = NULL;
+  struct list_elem *st = list_rbegin (&all_list);
+  struct list_elem *ed = list_rend (&all_list);
+  for (struct list_elem *it = st; it != ed; it = list_next (it))
+    {
+      struct thread *t = list_entry (it, struct thread, allelem);
+      if (t->tid == tid)
+        {
+          ret = t;
+          break;
+        }
+    }
+  ASSERT (ret != NULL);
+  return ret;
 }
 
 /* Comparision of priority for two different threads. */

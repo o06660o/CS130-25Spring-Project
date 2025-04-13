@@ -6,6 +6,7 @@
 #include "threads/flags.h"
 #include "threads/init.h"
 #include "threads/interrupt.h"
+#include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -21,6 +22,23 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+
+/* A hash table to find exit data from tid. */
+static struct hash hash_exit_data;
+
+/* Helper function for hash table. */
+static unsigned tid_hash (tid_t);
+static unsigned hash_func (const struct hash_elem *, void *);
+static bool hash_less (const struct hash_elem *, const struct hash_elem *,
+                       void *);
+static bool init_exit_data (struct thread *);
+
+/* Initializes the process module. */
+void
+process_init (void)
+{
+  hash_init (&hash_exit_data, hash_func, hash_less, NULL);
+}
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -53,7 +71,51 @@ process_execute (const char *file_name)
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
   palloc_free_page (fn_copy2);
+
+  struct thread *new_thread = tid_to_thread (tid);
+  struct thread *cur = thread_current ();
+  ASSERT (new_thread->creator == cur);
+  if (!init_exit_data (new_thread))
+    return TID_ERROR;
+  /* Don't use new_thread->creator to refer to cur, because new_thread may
+     have already died. */
+  sema_down (&cur->ch_load_sema);
+  ASSERT (cur->ch_load_status != LOAD_READY);
+  bool load_success = cur->ch_load_status == LOAD_SUCCESS;
+  cur->ch_load_status = LOAD_READY;
+  if (!load_success)
+    return TID_ERROR;
   return tid;
+}
+
+/* Initializes the exit data of the thread T. */
+static bool
+init_exit_data (struct thread *t)
+{
+  struct exit_data *data = malloc (sizeof (struct exit_data));
+  if (data == NULL)
+    return false;
+  data->tid = t->tid;
+  ASSERT (t->creator != NULL);
+  data->father = t->creator;
+  data->called_process_wait = false;
+  data->exit_code = -1;
+  sema_init (&data->die_sema, 0);
+  enum intr_level old_level = intr_disable ();
+  hash_insert (&hash_exit_data, &data->hashelem);
+  list_push_back (&t->creator->ch_exit_data, &data->listelem);
+  intr_set_level (old_level);
+  return true;
+}
+
+/* Destroy the exit data of the thread T. */
+void
+destroy_exit_data (struct exit_data *data)
+{
+  enum intr_level old_level = intr_disable ();
+  hash_delete (&hash_exit_data, &data->hashelem);
+  intr_set_level (old_level);
+  free (data);
 }
 
 /* A thread function that loads a user process and starts it
@@ -80,6 +142,10 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (argv[0], &if_.eip, &if_.esp);
+
+  struct thread *cur = thread_current ();
+  cur->creator->ch_load_status = success ? LOAD_SUCCESS : LOAD_FAIL;
+  sema_up (&cur->creator->ch_load_sema);
 
   /* If load failed, quit. */
   if (!success)
@@ -136,15 +202,20 @@ start_process (void *file_name_)
    exception), returns -1.  If TID is invalid or if it was not a
    child of the calling process, or if process_wait() has already
    been successfully called for the given TID, returns -1
-   immediately, without waiting.
-
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
+   immediately, without waiting. */
 int
-process_wait (tid_t child_tid UNUSED)
+process_wait (tid_t child_tid)
 {
-  timer_sleep (TIMER_FREQ);
-  return 0;
+  struct exit_data *data = tid_to_exit_data (child_tid);
+  if (data == NULL)
+    return -1; /* Invalid TID. */
+  if (data->father == NULL || data->father->tid != thread_current ()->tid)
+    return -1; /* Not a child. */
+  if (data->called_process_wait)
+    return -1; /* Already waited. */
+  data->called_process_wait = true;
+  sema_down (&data->die_sema); /* Wait for the child to die. */
+  return data->exit_code;
 }
 
 /* Free the current process's resources and print terminate message. */
@@ -156,6 +227,11 @@ process_exit (int status)
 
   /* Process termination message. */
   printf ("%s: exit(%d)\n", cur->name, status);
+
+  struct exit_data *data = tid_to_exit_data (cur->tid);
+  ASSERT (data != NULL);
+  data->exit_code = status;
+  sema_up (&data->die_sema);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -521,4 +597,37 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+/* Find the exit data by tid. */
+struct exit_data *
+tid_to_exit_data (tid_t tid)
+{
+  struct exit_data tmp;
+  tmp.tid = tid;
+  struct hash_elem *elem = hash_find (&hash_exit_data, &tmp.hashelem);
+  return elem != NULL ? hash_entry (elem, struct exit_data, hashelem) : NULL;
+}
+
+/* Helper function for hash table. */
+static unsigned
+tid_hash (tid_t tid)
+{
+  return tid;
+}
+
+static unsigned
+hash_func (const struct hash_elem *elem, void *aux UNUSED)
+{
+  struct exit_data *data = hash_entry (elem, struct exit_data, hashelem);
+  return tid_hash (data->tid);
+}
+
+static bool
+hash_less (const struct hash_elem *lhs, const struct hash_elem *rhs,
+           void *aux UNUSED)
+{
+  struct exit_data *lhs_ = hash_entry (lhs, struct exit_data, hashelem);
+  struct exit_data *rhs_ = hash_entry (rhs, struct exit_data, hashelem);
+  return lhs_->tid < rhs_->tid;
 }

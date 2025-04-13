@@ -1,6 +1,7 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
 
+#include "threads/synch.h"
 #include <debug.h>
 #include <fixed.h>
 #include <heap.h>
@@ -15,6 +16,16 @@ enum thread_status
   THREAD_BLOCKED, /* Waiting for an event to trigger. */
   THREAD_DYING    /* About to be destroyed. */
 };
+
+#ifdef USERPROG
+/* States when a process loads the executable. */
+enum load_status
+{
+  LOAD_READY,   /* Not loading but ready to load. */
+  LOAD_SUCCESS, /* Loading the executable. */
+  LOAD_FAIL     /* Loading fails. */
+};
+#endif
 
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
@@ -118,11 +129,19 @@ struct thread
 #ifdef USERPROG
   /* Owned by userprog/process.c. */
   uint32_t *pagedir; /* Page directory. */
+
+  struct thread *creator;          /* The thread that creates this thread. */
+  enum load_status ch_load_status; /* Load status. */
+  struct semaphore ch_load_sema;   /* Semaphore for loading. */
+
+  struct list ch_exit_data; /* List of child threads. */
 #endif
 
   /* Owned by thread.c. */
   unsigned magic; /* Detects stack overflow. */
 };
+
+struct thread *tid_to_thread (tid_t); /* Find thread by its tid. */
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

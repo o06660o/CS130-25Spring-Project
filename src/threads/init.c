@@ -127,6 +127,10 @@ main (void)
   filesys_init (format_filesys);
 #endif
 
+#ifdef USERPROG
+  process_init ();
+#endif
+
   printf ("\033[31mBoot complete.\033[0m\n");
 
   /* Run actions specified on kernel command line. */
