@@ -228,7 +228,9 @@ process_exit (int status)
   /* Process termination message. */
   printf ("%s: exit(%d)\n", cur->name, status);
 
+  lock_acquire (&filesys_lock);
   file_close (cur->exec_file);
+  lock_release (&filesys_lock);
 
   struct exit_data *data = tid_to_exit_data (cur->tid);
   ASSERT (data != NULL);
@@ -355,6 +357,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
+  lock_acquire (&filesys_lock);
+
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL)
@@ -456,6 +460,8 @@ done:
     }
   else
     file_close (file);
+
+  lock_release (&filesys_lock);
   return success;
 }
 
