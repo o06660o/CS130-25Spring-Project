@@ -283,7 +283,7 @@ static int
 filesize_ (int fd)
 {
   if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
-    return -1;
+    return 0;
   struct file *open_file = fd_entry[fd];
   if (open_file == NULL)
     return 0;
