@@ -1,4 +1,5 @@
 #include "userprog/exception.h"
+#include "filesys/filesys.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -154,7 +155,11 @@ page_fault (struct intr_frame *f)
   /* The kernel thread is trying to access the invalid address passed
      by the user program. */
   if (!user && is_user_vaddr (fault_addr))
-    process_exit (-1);
+    {
+      if (lock_held_by_current_thread (&filesys_lock))
+        lock_release (&filesys_lock);
+      process_exit (-1);
+    }
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
