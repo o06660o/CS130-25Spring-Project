@@ -69,11 +69,95 @@ simultaneously.
 
 > **B1:** Copy here the declaration of each new or changed `struct` or struct member, global or static variable, `typedef`, or enumeration. Identify the purpose of each in 25 words or less.
 
-*Your answer here.*
+#### New Enumeration to `threads/thread.h`
+
+```c
+#ifdef USERPROG
+/* States when a process loads the executable. */
+enum load_status
+{
+  LOAD_READY,   /* Not loading but ready to load. */
+  LOAD_SUCCESS, /* Loading the executable. */
+  LOAD_FAIL     /* Loading fails. */
+};
+#endif
+```
+
+#### New Struct Member to `struct thread`
+
+```c
+struct thread
+{
+  /* ... */
+
+#ifdef USERPROG
+  /* Owned by userprog/process.c. */
+  uint32_t *pagedir; /* Page directory. */
+
+  struct thread *creator;          /* The thread that creates this thread. */
+  enum load_status ch_load_status; /* Load status. */
+  struct semaphore ch_load_sema;   /* Semaphore for loading. */
+
+  struct list ch_exit_data; /* List of child threads. */
+
+  struct file *exec_file; /* Loaded executable file. */
+#endif
+
+  /* ... */
+}
+```
+
+#### New Struct to `userprog/process.h`
+
+```c
+/* Used to track the exit value after a thread exits. */
+struct exit_data
+{
+  tid_t tid;                 /* The thread id of the thread. */
+  int exit_code;             /* The exit code of the thread. */
+  bool called_process_wait;  /* Whether process_wait() has been called. */
+  struct thread *father;     /* The father thread of the thread. */
+  struct hash_elem hashelem; /* The hash element stored in hash_exit_data. */
+  struct list_elem listelem; /* The list element stored in ch_exit_data. */
+  struct semaphore die_sema; /* Wait for the thread to die. */
+};
+```
+
+#### New Static Variable to `userprog/process.c`
+
+```c
+/* A hash table to find exit data from tid. */
+static struct hash hash_exit_data;
+```
+
+#### New Static Variable to `userprog/syscall.c`
+
+```c
+/* file descriptor table. */
+static struct bitmap *fd_table; /* Tracking allocated (1) and free (0) fds. */
+static struct file *fd_entry[OPEN_FILE_MAX]; /* Maps fd to struct file *. */
+static tid_t fd_owner[OPEN_FILE_MAX];        /* thread tid owning each fd. */
+static struct lock fd_table_lock; /* Mutex protection for fd table access. */
+```
+
+#### New Global Variable to `filesys/filesys.c`
+
+```c
+/* Prevent multiple threads to use filesystem at same time. */
+struct lock filesys_lock;
+```
 
 > **B2:** Describe how file descriptors are associated with open files. Are file descriptors unique within the entire OS or just within a single process?
 
-*Your answer here.*
+In our implementation, file descriptors are managed through a global static
+structure consisting of a bitmap `fd_table` tracking allocated fds, an
+array `fd_entry` mapping fds to `struct file` pointers representing open
+files, and an ownership array `fd_owner` recording the thread TID associated
+with each fd, all protected by a global mutex lock `fd_table_lock`.
+
+File descriptors are uniquely within entire OS, as the `fd_table` , `fd_entry`
+and `fd_owner` are shared across all processes, with the fd value acting as a
+global index into these structures.
 
 ### Algorithms
 
@@ -117,7 +201,17 @@ simultaneously.
 
 > **B10:** What advantages or disadvantages can you see to your design for file descriptors?
 
-*Your answer here.*
+Advantages:
+
+- Avoid per-process file descriptor table management overhead.
+
+- TID-based ownership enforces access isolation between processes,
+preventing unauthorized operations.
+
+Disadvantages:
+
+- The global mutex Lock may lead to performance issues under heavy
+concurrency.
 
 > **B11:** The default `tid_t` to `pid_t` mapping is the identity mapping. If you changed it, what advantages does your approach offer?
 
@@ -129,4 +223,4 @@ simultaneously.
 
 > Do you have any suggestions for the TAs to more effectively assist students, either for future quarters or the remaining projects? Any other comments?
 
-*Your answer here.*
+None.
