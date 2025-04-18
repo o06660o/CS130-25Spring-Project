@@ -1,13 +1,22 @@
 #include "userprog/syscall.h"
 #include "devices/shutdown.h"
 #include "filesys/directory.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
+#include <bitmap.h>
 #include <lib/user/syscall.h>
 #include <stdio.h>
 #include <syscall-nr.h>
+
+/* file descripter table. */
+static struct bitmap *fd_table;
+static struct file *fd_entry[OPEN_FILE_MAX];
+static tid_t fd_owner[OPEN_FILE_MAX];
+static struct lock fd_table_lock;
 
 /* Read data from the user stack, ESP won't be modified. */
 #define READ(esp, delta, type)                                                \
@@ -36,6 +45,11 @@ void
 syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  fd_table = bitmap_create (OPEN_FILE_MAX);
+  bitmap_set_multiple (fd_table, 0, 2, true);
+  lock_init (&fd_table_lock);
+  for (int i = 0; i < OPEN_FILE_MAX; ++i)
+    fd_owner[i] = TID_ERROR;
 }
 
 /* Reads data from the user stack. Only checks that the address is not
@@ -211,12 +225,16 @@ exec_ (const char *cmd_line)
 
 /* The create syscall. */
 static bool
-create_ (const char *file, unsigned initial_size UNUSED)
+create_ (const char *file, unsigned initial_size)
 {
   if (!is_valid_str (file, NAME_MAX + 1))
     return false; /* File name too long. */
-  // TODO
-  return false;
+
+  lock_acquire (&filesys_lock);
+  bool success = filesys_create (file, initial_size);
+  lock_release (&filesys_lock);
+
+  return success;
 }
 
 /* The remove syscall. */
@@ -225,8 +243,8 @@ remove_ (const char *file)
 {
   if (!is_valid_str (file, NAME_MAX + 1))
     return false; /* File name too long. */
-  // TODO
-  return false;
+  bool success = filesys_remove (file);
+  return success;
 }
 
 /* The open syscall. */
@@ -234,27 +252,74 @@ static int
 open_ (const char *file)
 {
   if (!is_valid_str (file, NAME_MAX + 1))
-    return false; /* File name too long. */
-  // TODO
-  return -1;
+    return -1; /* File name too long. */
+
+  lock_acquire (&filesys_lock);
+  struct file *open_file = filesys_open (file);
+  lock_release (&filesys_lock);
+  if (open_file == NULL)
+    return -1;
+
+  lock_acquire (&fd_table_lock);
+  int fd_alloc = bitmap_scan (fd_table, 2, 1, false);
+  if (fd_alloc == BITMAP_ERROR)
+    {
+      lock_release (&fd_table_lock);
+      lock_acquire (&filesys_lock);
+      file_close (open_file);
+      lock_release (&filesys_lock);
+      return -1;
+    }
+  bitmap_set (fd_table, fd_alloc, true);
+  fd_owner[fd_alloc] = thread_current ()->tid;
+  fd_entry[fd_alloc] = open_file;
+  lock_release (&fd_table_lock);
+  return fd_alloc;
 }
 
 /* The filesize syscall. */
 static int
-filesize_ (int fd UNUSED)
+filesize_ (int fd)
 {
-  // TODO
-  return -1;
+  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
+    return -1;
+  struct file *open_file = fd_entry[fd];
+  if (open_file == NULL)
+    return 0;
+  lock_acquire (&filesys_lock);
+  int size = file_length (open_file);
+  lock_release (&filesys_lock);
+  return size;
 }
 
 /* The read syscall. */
 static int
-read_ (int fd UNUSED, void *buffer, unsigned size)
+read_ (int fd, void *buffer, unsigned size)
 {
   if (!is_valid_buf (buffer, size))
     exit_ (-1);
-  // TODO
-  return -1;
+
+  if (fd == STDIN_FILENO)
+    {
+      for (unsigned i = 0; i < size; ++i)
+        {
+          *(uint8_t *)buffer = input_getc ();
+          buffer += sizeof (uint8_t);
+        }
+      return size;
+    }
+  else if (fd == STDOUT_FILENO)
+    return -1;
+
+  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
+    return -1;
+  struct file *open_file = fd_entry[fd];
+  if (open_file == NULL)
+    return -1;
+  lock_acquire (&filesys_lock);
+  int ret = file_read (open_file, buffer, size);
+  lock_release (&filesys_lock);
+  return ret;
 }
 
 /* The write syscall. */
@@ -263,33 +328,71 @@ write_ (int fd, const void *buffer, unsigned size)
 {
   if (!is_valid_buf (buffer, size))
     exit_ (-1);
-  // TODO
+
   if (fd == STDOUT_FILENO)
     {
       putbuf ((const char *)buffer, size);
       return size;
     }
-  return -1;
+  else if (fd == STDIN_FILENO)
+    return -1;
+
+  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
+    return -1;
+  struct file *open_file = fd_entry[fd];
+  if (open_file == NULL)
+    return -1;
+  lock_acquire (&filesys_lock);
+  int ret = file_write (open_file, buffer, size);
+  lock_release (&filesys_lock);
+  return ret;
 }
 
 /* The seek syscall. */
 static void
-seek_ (int fd UNUSED, unsigned position UNUSED)
+seek_ (int fd, unsigned position)
 {
-  // TODO
+  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
+    return;
+  struct file *open_file = fd_entry[fd];
+  if (open_file == NULL)
+    return;
+  lock_acquire (&filesys_lock);
+  file_seek (open_file, position);
+  lock_release (&filesys_lock);
 }
 
 /* The tell syscall. */
 static unsigned
-tell_ (int fd UNUSED)
+tell_ (int fd)
 {
-  // TODO
-  return -1;
+  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
+    return -1;
+  struct file *open_file = fd_entry[fd];
+  if (open_file == NULL)
+    return -1;
+  lock_acquire (&filesys_lock);
+  int ret = file_tell (open_file);
+  lock_release (&filesys_lock);
+  return ret;
 }
 
 /* The close syscall. */
 static void
-close_ (int fd UNUSED)
+close_ (int fd)
 {
-  // TODO
+  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
+    return;
+  struct file *open_file = fd_entry[fd];
+  if (open_file == NULL)
+    return;
+  lock_acquire (&filesys_lock);
+  file_close (open_file);
+  lock_release (&filesys_lock);
+
+  lock_acquire (&fd_table_lock);
+  bitmap_set (fd_table, fd, false);
+  fd_owner[fd] = TID_ERROR;
+  fd_entry[fd] = NULL;
+  lock_release (&fd_table_lock);
 }
