@@ -1,4 +1,5 @@
 #include "userprog/syscall.h"
+#include "devices/input.h"
 #include "devices/shutdown.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
