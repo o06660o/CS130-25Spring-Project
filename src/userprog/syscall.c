@@ -262,7 +262,7 @@ open_ (const char *file)
     return -1;
 
   lock_acquire (&fd_table_lock);
-  int fd_alloc = bitmap_scan (fd_table, 2, 1, false);
+  size_t fd_alloc = bitmap_scan (fd_table, 2, 1, false);
   if (fd_alloc == BITMAP_ERROR)
     {
       lock_release (&fd_table_lock);
