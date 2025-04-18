@@ -135,6 +135,8 @@ struct thread
   struct semaphore ch_load_sema;   /* Semaphore for loading. */
 
   struct list ch_exit_data; /* List of child threads. */
+
+  struct file *exec_file; /* Loaded executable file. */
 #endif
 
   /* Owned by thread.c. */

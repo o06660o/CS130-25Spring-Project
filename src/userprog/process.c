@@ -228,6 +228,8 @@ process_exit (int status)
   /* Process termination message. */
   printf ("%s: exit(%d)\n", cur->name, status);
 
+  file_close (cur->exec_file);
+
   struct exit_data *data = tid_to_exit_data (cur->tid);
   ASSERT (data != NULL);
   data->exit_code = status;
@@ -447,7 +449,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  if (success)
+    {
+      file_deny_write (file);
+      t->exec_file = file;
+    }
+  else
+    file_close (file);
   return success;
 }
 
