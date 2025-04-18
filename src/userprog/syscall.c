@@ -12,11 +12,11 @@
 #include <stdio.h>
 #include <syscall-nr.h>
 
-/* file descripter table. */
-static struct bitmap *fd_table;
-static struct file *fd_entry[OPEN_FILE_MAX];
-static tid_t fd_owner[OPEN_FILE_MAX];
-static struct lock fd_table_lock;
+/* file descriptor table. */
+static struct bitmap *fd_table; /* Tracking allocated (1) and free (0) fds. */
+static struct file *fd_entry[OPEN_FILE_MAX]; /* Maps fd to struct file *. */
+static tid_t fd_owner[OPEN_FILE_MAX];        /* thread tid owning each fd. */
+static struct lock fd_table_lock; /* Mutex protection for fd table access. */
 
 /* Read data from the user stack, ESP won't be modified. */
 #define READ(esp, delta, type)                                                \
