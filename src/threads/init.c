@@ -131,6 +131,9 @@ main (void)
   process_init ();
 #endif
 
+  if (thread_mlfqs)
+    printf ("MLFQS scheduler enabled.\n");
+
   printf ("\033[31mBoot complete.\033[0m\n");
 
   /* Run actions specified on kernel command line. */
