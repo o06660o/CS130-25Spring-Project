@@ -163,25 +163,66 @@ global index into these structures.
 
 > **B3:** Describe your code for reading and writing user data from the kernel.
 
-*Your answer here.*
+First of all, before dereferencing any pointer, we check that they points
+below `PHYS_BASE`. Any invalid pointer will terminate the process by
+invoking `exit_(-1)`.
+
+Then we define a `READ` macro, calling `read_data()` to incrementally fetch
+arguments from the user stack.
+
+If dereferencing user pointers cause a "page fault", it will be handled in
+`page_fault()`.
 
 > **B4:** Suppose a system call causes a full page (4,096 bytes) of data to be copied from user space into the kernel. What is the least and the greatest possible number of inspections of the page table (e.g., calls to `pagedir_get_page()`) that might result? What about for a system call that only copies 2 bytes of data? Is there room for improvement in these numbers, and how much?
 
-*Your answer here.*
+**4096 bytes:**
+Least: 1 inspection. (entire buffer in one valid page)
+Greatest: 4096 inspections. (each byte in a separate page)
+
+**2 bytes:**
+Least: 1 inspection. (both bytes in the same page)
+Greatest: 2 inspections. (bytes in different pages)
+
+**Improvement:**
+In pintos, a system call will only cause a continuous segment of data to be
+copied. Even if we have to copy 4096 bytes of data, the worst case is that they
+cross two pages. Therefore we only need 2 inspection in that case.
 
 > **B5:** Briefly describe your implementation of the "wait" system call and how it interacts with process termination.
 
-*Your answer here.*
+The "wait" system call invokes `process_wait()`. In pintos there is only one
+thread in a process, we can simply convert `pid_t` to `tid_t`.
+
+We defined a new struct `exit_data`, to track the exit code of a thread.
+When a thread terminates, it assigns its exit code to its exit data and
+increments the semaphore. Then the parent process know it terminates and
+finish waiting.
 
 > **B6:** Accessing user program memory at a user-specified address may fail due to a bad pointer value, requiring termination of the process. Describe your strategy for managing error-handling without obscuring core functionality and ensuring that all allocated resources (locks, buffers, etc.) are freed. Give an example.
 
-*Your answer here.*
+For example, when we write data to files, a lock called `filesys_lock` is
+acquired by the crrent thread, it is released after executing write operation.
+
+```c
+lock_acquire (&filesys_lock);
+int ret = file_write (op_file->file, buffer, size);
+lock_release (&filesys_lock);
+```
+
+However, when `file_write()` causes page fault, the `lock_release()` below it
+will not be performed. Therefore in page fault handler we have to release it
+if the dying process holds that lock.
 
 ### Synchronization
 
 > **B7:** The "exec" system call returns -1 if loading the new executable fails, so it cannot return before the new executable has completed loading. How does your code ensure this? How is the load success/failure status passed back to the thread that calls "exec"?
 
-*Your answer here.*
+We use a semaphore to force the parent thread to wait until the new executable
+finishes loading.
+
+There is a enumerate called `load_status` in each thread to track the load
+status. When the child finishes loading, it will modify its parent's load
+status.
 
 > **B8:** Consider a parent process P with child process C. How do you ensure proper synchronization and avoid race conditions when:
 >
@@ -191,13 +232,23 @@ global index into these structures.
 > - P terminates after C exits?
 > - Are there any special cases?
 
-*Your answer here.*
+- When P calls `wait(C)` before C exits:
+  P will be forced to wait until C exits, then get the exit code.
+- P calls `wait(C)` after C exits:
+  P will immediately get the exit code and finish waiting.
+- P terminates before C exits:
+  The exit code doesn't matter in this case. P will free C's exit data and C
+  won't access them when it exits.
+- P terminates after C exits:
+  The exit code doesn't matter in this case. P will free C's exit data and C
+  won't access them when it exits.
 
 ### Rationale
 
 > **B9:** Why did you choose to implement access to user memory from the kernel in the way that you did?
 
-*Your answer here.*
+We use the second approach since it is normally faster than the first one and
+tends to be used in real kernels. (according to the pintos document)
 
 > **B10:** What advantages or disadvantages can you see to your design for file descriptors?
 
@@ -215,7 +266,8 @@ concurrency.
 
 > **B11:** The default `tid_t` to `pid_t` mapping is the identity mapping. If you changed it, what advantages does your approach offer?
 
-*Your answer here.*
+We don't change it because every process in pintos only has one thread.
+The identity mapping is reasonable and efficient.
 
 ---
 
