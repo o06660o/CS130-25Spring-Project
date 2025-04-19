@@ -299,19 +299,6 @@ void
 thread_exit (void)
 {
   ASSERT (!intr_context ());
-#ifdef USERPROG
-  /* Clear the children's exit data. */
-  struct thread *cur = thread_current ();
-  struct list_elem *st = list_begin (&cur->ch_exit_data);
-  struct list_elem *ed = list_end (&cur->ch_exit_data);
-  for (struct list_elem *it = st; it != ed;)
-    {
-      struct exit_data *data = list_entry (it, struct exit_data, listelem);
-      it = list_next (it);
-      ASSERT (data != NULL);
-      destroy_exit_data (data);
-    }
-#endif
 
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us

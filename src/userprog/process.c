@@ -32,6 +32,7 @@ static unsigned hash_func (const struct hash_elem *, void *);
 static bool hash_less (const struct hash_elem *, const struct hash_elem *,
                        void *);
 static bool init_exit_data (struct thread *);
+static void destroy_exit_data (struct exit_data *);
 
 /* Initializes the process module. */
 void
@@ -109,7 +110,7 @@ init_exit_data (struct thread *t)
 }
 
 /* Destroy the exit data of the thread T. */
-void
+static void
 destroy_exit_data (struct exit_data *data)
 {
   enum intr_level old_level = intr_disable ();
@@ -233,9 +234,23 @@ process_exit (int status)
   lock_release (&filesys_lock);
 
   struct exit_data *data = tid_to_exit_data (cur->tid);
-  ASSERT (data != NULL);
-  data->exit_code = status;
-  sema_up (&data->die_sema);
+  /* If data is NULL, it means that the parent has already exited. */
+  if (data != NULL)
+    {
+      data->exit_code = status;
+      sema_up (&data->die_sema);
+    }
+
+  /* Clear the children's exit data. */
+  struct list_elem *st = list_begin (&cur->ch_exit_data);
+  struct list_elem *ed = list_end (&cur->ch_exit_data);
+  for (struct list_elem *it = st; it != ed;)
+    {
+      struct exit_data *data = list_entry (it, struct exit_data, listelem);
+      it = list_next (it);
+      ASSERT (data != NULL);
+      destroy_exit_data (data);
+    }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

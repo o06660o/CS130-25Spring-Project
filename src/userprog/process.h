@@ -20,7 +20,6 @@ struct exit_data
 };
 
 struct exit_data *tid_to_exit_data (tid_t); /* Get exit data by thread id. */
-void destroy_exit_data (struct exit_data *);
 
 void process_init (void);
 tid_t process_execute (const char *file_name);
