@@ -6,8 +6,6 @@
 #include <debug.h>
 #include <stdint.h>
 
-#define FRAME_DEFAULT 1024u /* Default and minimal size of frame table. */
-
 /* frame table. */
 
 static struct hash frame_hash;
