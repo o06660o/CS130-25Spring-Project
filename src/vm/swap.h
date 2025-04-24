@@ -1,7 +1,6 @@
-#ifndef VM_FRAME_H
-#define VM_FRAME_H
+#ifndef VM_SWAP_H
+#define VM_SWAP_H
 
-#include "vm/frame.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
