@@ -3,6 +3,7 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "vm/swap.h"
 #include <debug.h>
 #include <stdint.h>
 
@@ -14,6 +15,8 @@ static struct list_elem *clock_ptr;
 static size_t frame_count;
 static struct lock frame_lock;
 
+/* Try to find a frame to evict */
+static void *frame_evict (void);
 /* Helper functions for hash table. */
 static unsigned hash_func (const struct hash_elem *, void *UNUSED);
 static bool hash_less (const struct hash_elem *, const struct hash_elem *,
@@ -41,10 +44,9 @@ frame_alloc (enum palloc_flags flags, void *upage)
   lock_acquire (&frame_lock);
   void *kpage = palloc_get_page (flags | PAL_USER);
   if (kpage == NULL)
-    {
-      // TODO: eviction
-      PANIC ("To be implemented.");
-    }
+    kpage = frame_evict ();
+  if (kpage == NULL)
+    PANIC ("Cannot evictict a frame");
   struct frame *frame = (struct frame *)malloc (sizeof (struct frame));
   frame->kpage = kpage;
   frame->upage = upage;
@@ -76,6 +78,19 @@ frame_free (void *kpage)
   list_remove (&frame->listelem);
   free (frame);
   lock_release (&frame_lock);
+}
+
+/* Evicts a frame from the frame table. */
+static void *
+frame_evict (void)
+{
+  struct frame *f = NULL;
+  // TODO: find a frame to evict. Currently we only select the first frame.
+  f = list_entry (list_rbegin (&frame_list), struct frame, listelem);
+  if (f == NULL)
+    return NULL;
+  slot_id _ UNUSED = swap_out (f->kpage);
+  return f->kpage;
 }
 
 static unsigned

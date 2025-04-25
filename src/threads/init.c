@@ -33,6 +33,7 @@
 #endif
 #ifdef VM
 #include "vm/frame.h"
+#include "vm/swap.h"
 #endif
 #ifdef FILESYS
 #include "devices/block.h"
@@ -101,9 +102,6 @@ main (void)
   palloc_init (user_page_limit);
   malloc_init ();
   paging_init ();
-#ifdef VM
-  frame_init ();
-#endif
 
   /* Segmentation. */
 #ifdef USERPROG
@@ -135,6 +133,12 @@ main (void)
 
 #ifdef USERPROG
   process_init ();
+#endif
+
+#ifdef VM
+  /* Initialize virtual memory system. */
+  frame_init ();
+  swap_init ();
 #endif
 
   if (thread_mlfqs)
