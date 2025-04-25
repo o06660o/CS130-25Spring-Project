@@ -85,7 +85,7 @@ static void *
 frame_evict (void)
 {
   struct frame *f = NULL;
-  // TODO: find a frame to evict. Currently we only select the first frame.
+  // TODO: find a frame to evict. Currently we only select the last frame.
   f = list_entry (list_rbegin (&frame_list), struct frame, listelem);
   if (f == NULL)
     return NULL;
