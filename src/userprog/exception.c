@@ -7,6 +7,9 @@
 #include "userprog/process.h"
 #include <inttypes.h>
 #include <stdio.h>
+#ifdef VM
+#include "vm/page.h"
+#endif
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -112,9 +115,7 @@ kill (struct intr_frame *f)
     }
 }
 
-/* Page fault handler.  This is a skeleton that must be filled in
-   to implement virtual memory.  Some solutions to project 2 may
-   also require modifying this code.
+/* Page fault handler.
 
    At entry, the address that faulted is in CR2 (Control Register
    2) and information about the fault, formatted as described in
@@ -159,6 +160,16 @@ page_fault (struct intr_frame *f)
       if (lock_held_by_current_thread (&filesys_lock))
         lock_release (&filesys_lock);
       process_exit (-1);
+      NOT_REACHED ();
+    }
+  else if (user && not_present)
+    {
+#ifdef VM
+      /* We place the conditional compile here to make syntax highlighting
+         work correctly.  */
+      page_full_load (fault_addr);
+      return;
+#endif
     }
 
   /* To implement virtual memory, delete the rest of the function

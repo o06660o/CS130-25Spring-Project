@@ -523,6 +523,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->ch_load_status = LOAD_READY;
   sema_init (&t->ch_load_sema, 0);
 #endif
+#ifdef VM
+  list_init (&t->page_list);
+#endif
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

@@ -33,6 +33,7 @@
 #endif
 #ifdef VM
 #include "vm/frame.h"
+#include "vm/page.h"
 #include "vm/swap.h"
 #endif
 #ifdef FILESYS
@@ -139,6 +140,7 @@ main (void)
   /* Initialize virtual memory system. */
   frame_init ();
   swap_init ();
+  page_init ();
 #endif
 
   if (thread_mlfqs)

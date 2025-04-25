@@ -138,6 +138,9 @@ struct thread
 
   struct file *exec_file; /* Loaded executable file. */
 #endif
+#ifdef VM
+  struct list page_list; /* Pages a user process owns. */
+#endif
 
   /* Owned by thread.c. */
   unsigned magic; /* Detects stack overflow. */

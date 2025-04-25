@@ -12,6 +12,6 @@ typedef size_t slot_id;
 
 void swap_init (void);
 slot_id swap_out (const void *kpage);
-bool swap_in (slot_id swap_idx, void *kpage);
+bool swap_in (slot_id slot_idx, void *kpage);
 
 #endif /* vm/swap.h */

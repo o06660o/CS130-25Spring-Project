@@ -56,24 +56,24 @@ swap_out (const void *kpage)
    It is the caller's responsibility to ensure that the memory address given is
    valid and has enough space. */
 bool
-swap_in (slot_id swap_idx, void *kpage)
+swap_in (slot_id slot_idx, void *kpage)
 {
   lock_acquire (&swap_lock);
   bool failed = false;
-  if (swap_idx >= bitmap_size (swap_bitmap))
+  if (slot_idx >= bitmap_size (swap_bitmap))
     failed = true;
-  if (bitmap_test (swap_bitmap, swap_idx) == false)
+  if (bitmap_test (swap_bitmap, slot_idx) == false)
     failed = true;
   lock_release (&swap_lock);
   if (failed)
     return false;
 
   for (int i = 0; i < SLOT_SIZE; i++)
-    block_read (swap_device, swap_idx * SLOT_SIZE + i,
+    block_read (swap_device, slot_idx * SLOT_SIZE + i,
                 kpage + i * BLOCK_SECTOR_SIZE);
 
   lock_acquire (&swap_lock);
-  bitmap_set (swap_bitmap, swap_idx, false);
+  bitmap_set (swap_bitmap, slot_idx, false);
   lock_release (&swap_lock);
   return true;
 }

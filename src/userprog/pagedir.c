@@ -2,6 +2,7 @@
 #include "threads/init.h"
 #include "threads/palloc.h"
 #include "threads/pte.h"
+#include "threads/thread.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
@@ -228,6 +229,17 @@ pagedir_activate (uint32_t *pd)
      to/from Control Registers" and [IA32-v3a] 3.7.5 "Base
      Address of the Page Directory". */
   asm volatile ("movl %0, %%cr3" : : "r"(vtop (pd)) : "memory");
+}
+
+/* See install_page() at userprog/process.c. */
+bool
+pagedir_install_page (struct thread *t, void *upage, void *kpage,
+                      bool writable)
+{
+  /* Verify that there's not already a page at that virtual
+     address, then map our page there. */
+  return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
 /* Returns the currently active page directory. */
