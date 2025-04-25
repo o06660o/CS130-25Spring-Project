@@ -6,6 +6,7 @@
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 #include "vm/frame.h"
+#include <debug.h>
 #include <hash.h>
 #include <stdio.h>
 #include <string.h>
@@ -21,7 +22,8 @@ static unsigned hash_func (const struct hash_elem *, void *UNUSED);
 static bool hash_less (const struct hash_elem *, const struct hash_elem *,
                        void *UNUSED);
 
-static struct page *faddr_to_page (const void *fault_addr);
+/* NO_INLINE is used for debugging purposes. */
+static struct page *faddr_to_page (const void *fault_addr) NO_INLINE;
 
 void
 page_init (void)
@@ -62,10 +64,11 @@ page_lazy_load (struct file *file, off_t ofs, void *upage, uint32_t read_bytes,
 
 /* Converts a fault address to a page. */
 static struct page *
-faddr_to_page (const void *fault_addr)
+get_page (const void *fault_addr, const struct thread *t)
 {
   struct page tmp;
   tmp.upage = pg_round_down (fault_addr);
+  tmp.owner = (struct thread *)t;
   struct hash_elem *e = hash_find (&sup_page_table, &tmp.hashelem);
   return e != NULL ? hash_entry (e, struct page, hashelem) : NULL;
 }
@@ -74,19 +77,20 @@ faddr_to_page (const void *fault_addr)
 bool
 page_full_load (void *fault_addr)
 {
-  printf ("[DEBUG]: trying to load page from address %p, ", fault_addr);
   if (fault_addr == NULL)
     return false;
 
   lock_acquire (&sup_page_table_lock);
-  struct page *page = faddr_to_page (fault_addr);
+  struct page *page = get_page (fault_addr, thread_current ());
   void *kpage = NULL;
   if (page == NULL)
     goto fail;
+  ASSERT (page->owner == thread_current ());
 
   if (page->status == PAGE_READY)
     {
       ASSERT (page->kpage == NULL);
+      ASSERT (page->slot_idx == SLOT_ERR);
       kpage = frame_alloc (PAL_USER, page->upage);
       if (kpage == NULL)
         goto fail;
@@ -117,8 +121,7 @@ page_full_load (void *fault_addr)
   ASSERT (kpage != NULL);
   if (!pagedir_install_page (page->owner, page->upage, kpage, page->writable))
     goto fail;
-
-  printf ("page %p is loaded\n", page->upage);
+  ASSERT (pagedir_get_page (page->owner->pagedir, page->upage) == kpage);
 
   page->kpage = kpage;
   page->status = PAGE_FRAME;
@@ -161,7 +164,12 @@ static unsigned
 hash_func (const struct hash_elem *elem, void *aux UNUSED)
 {
   const struct page *page = hash_entry (elem, struct page, hashelem);
-  return hash_bytes (&page->upage, sizeof (page->upage));
+  unsigned h1 = hash_bytes (&page->upage, sizeof (page->upage)), h2;
+  if (page->owner == NULL)
+    h2 = hash_int (TID_ERROR);
+  else
+    h2 = hash_int (page->owner->tid);
+  return h1 ^ h2;
 }
 
 static bool
@@ -170,5 +178,9 @@ hash_less (const struct hash_elem *lhs, const struct hash_elem *rhs,
 {
   const struct page *lhs_ = hash_entry (lhs, struct page, hashelem);
   const struct page *rhs_ = hash_entry (rhs, struct page, hashelem);
-  return (uintptr_t)lhs_->upage < (uintptr_t)rhs_->upage;
+  uintptr_t l_upage = (uintptr_t)lhs_->upage;
+  tid_t l_tid = lhs_->owner == NULL ? TID_ERROR : lhs_->owner->tid;
+  uintptr_t r_upage = (uintptr_t)rhs_->upage;
+  tid_t r_tid = rhs_->owner == NULL ? TID_ERROR : rhs_->owner->tid;
+  return l_upage < r_upage || (l_upage == r_upage && l_tid < r_tid);
 }

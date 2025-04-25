@@ -167,7 +167,7 @@ page_fault (struct intr_frame *f)
 #ifdef VM
       /* We place the conditional compile here to make syntax highlighting
          work correctly.  */
-      page_full_load (fault_addr);
+      ASSERT (page_full_load (fault_addr));
       return;
 #endif
     }
