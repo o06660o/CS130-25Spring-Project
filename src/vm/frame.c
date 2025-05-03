@@ -84,10 +84,9 @@ frame_free (void *kpage)
 static void *
 frame_evict (void)
 {
-  PANIC ("frame_evict not implemented");
   struct frame *f = NULL;
-  // TODO: find a frame to evict. Currently we only select the last frame.
-  f = list_entry (list_rbegin (&frame_list), struct frame, listelem);
+  // TODO: find a frame to evict. Currently we only select the first frame.
+  f = list_entry (list_begin (&frame_list), struct frame, listelem);
   if (f == NULL)
     return NULL;
   slot_id _ UNUSED = swap_out (f->kpage);

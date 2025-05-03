@@ -21,9 +21,7 @@ static struct lock sup_page_table_lock;
 static unsigned hash_func (const struct hash_elem *, void *UNUSED);
 static bool hash_less (const struct hash_elem *, const struct hash_elem *,
                        void *UNUSED);
-
-/* NO_INLINE is used for debugging purposes. */
-static struct page *faddr_to_page (const void *fault_addr) NO_INLINE;
+static struct page *get_page (const void *fault_addr, const struct thread *t);
 
 void
 page_init (void)
@@ -164,11 +162,8 @@ static unsigned
 hash_func (const struct hash_elem *elem, void *aux UNUSED)
 {
   const struct page *page = hash_entry (elem, struct page, hashelem);
-  unsigned h1 = hash_bytes (&page->upage, sizeof (page->upage)), h2;
-  if (page->owner == NULL)
-    h2 = hash_int (TID_ERROR);
-  else
-    h2 = hash_int (page->owner->tid);
+  unsigned h1 = hash_bytes (&page->upage, sizeof (page->upage));
+  unsigned h2 = hash_int (page->owner == NULL ? TID_ERROR : page->owner->tid);
   return h1 ^ h2;
 }
 
