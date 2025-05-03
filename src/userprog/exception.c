@@ -157,17 +157,36 @@ page_fault (struct intr_frame *f)
      by the user program. */
   if (!user && is_user_vaddr (fault_addr))
     {
-      if (lock_held_by_current_thread (&filesys_lock))
+      bool held_filsys_lock = lock_held_by_current_thread (&filesys_lock);
+      if (held_filsys_lock)
         lock_release (&filesys_lock);
+#ifdef VM
+      if (not_present)
+        {
+          if (!page_full_load (fault_addr))
+            process_exit (-1);
+          if (held_filsys_lock)
+            lock_acquire (&filesys_lock);
+          return;
+        }
+#endif
       process_exit (-1);
       NOT_REACHED ();
     }
   else if (user && not_present)
     {
-#ifdef VM
-      /* We place the conditional compile here to make syntax highlighting
+      /* We place the conditional compilation here to make syntax highlighting
          work correctly.  */
-      ASSERT (page_full_load (fault_addr));
+#ifdef VM
+      bool held_filsys_lock = lock_held_by_current_thread (&filesys_lock);
+      if (held_filsys_lock)
+        lock_release (&filesys_lock);
+
+      if (!page_full_load (fault_addr))
+        process_exit (-1);
+
+      if (held_filsys_lock)
+        lock_acquire (&filesys_lock);
       return;
 #endif
     }
