@@ -154,7 +154,7 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
   /* The kernel thread is trying to access the invalid address passed
-     by the user program. */
+     by the user program, which implies that we are handling a system call. */
   if (!user && is_user_vaddr (fault_addr))
     {
       bool held_filsys_lock = lock_held_by_current_thread (&filesys_lock);
@@ -192,9 +192,7 @@ page_fault (struct intr_frame *f)
 #endif
     }
 
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
+  /* It's a kernel bug if we reach here. */
   printf ("Page fault at %p: %s error %s page in %s context.\n", fault_addr,
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading", user ? "user" : "kernel");

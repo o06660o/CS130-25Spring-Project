@@ -86,11 +86,22 @@ frame_free (void *kpage)
 static void *
 frame_evict (void)
 {
-  /* TODO: find a frame to evict. Currently we only select the first frame. */
+  ASSERT (lock_held_by_current_thread (&frame_lock));
+
+  /* TODO: Currently we only select the first unpinned frame. */
   if (list_empty (&frame_list))
     return NULL;
-  struct frame *f
-      = list_entry (list_begin (&frame_list), struct frame, listelem);
+  struct list_elem *st = list_begin (&frame_list);
+  struct list_elem *ed = list_end (&frame_list);
+  struct frame *f = NULL;
+  for (struct list_elem *e = st; e != ed; e = list_next (e))
+    {
+      struct frame *ff = list_entry (e, struct frame, listelem);
+      if (ff->pinned)
+        continue;
+      f = ff;
+      break;
+    }
   if (f == NULL)
     return NULL;
   slot_id slot_idx = swap_out (f->kpage);
@@ -105,7 +116,6 @@ frame_evict (void)
   f->sup_page = NULL;
 
   /* View the unbounded frame as a new frame. */
-  ASSERT (lock_held_by_current_thread (&frame_lock));
   list_remove (&f->listelem);
   hash_delete (&frame_hash, &f->hashelem);
 

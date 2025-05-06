@@ -67,7 +67,9 @@ get_page (const void *fault_addr, const struct thread *t)
   struct page tmp;
   tmp.upage = pg_round_down (fault_addr);
   tmp.owner = (struct thread *)t;
+  lock_acquire (&sup_page_table_lock);
   struct hash_elem *e = hash_find (&sup_page_table, &tmp.hashelem);
+  lock_release (&sup_page_table_lock);
   return e != NULL ? hash_entry (e, struct page, hashelem) : NULL;
 }
 
@@ -78,7 +80,6 @@ page_full_load (void *fault_addr)
   if (fault_addr == NULL)
     return false;
 
-  lock_acquire (&sup_page_table_lock);
   struct page *page = get_page (fault_addr, thread_current ());
   void *kpage = NULL;
   if (page == NULL)
@@ -123,14 +124,12 @@ page_full_load (void *fault_addr)
 
   page->kpage = kpage;
   page->status = PAGE_FRAME;
-  lock_release (&sup_page_table_lock);
   return true;
 
 fail:
   ASSERT (page->status != PAGE_FRAME);
   if (kpage != NULL)
     frame_free (kpage);
-  lock_release (&sup_page_table_lock);
   return false;
 }
 
@@ -154,7 +153,9 @@ page_free (struct page *page)
       ASSERT (swap_in (page->slot_idx, tmp));
       palloc_free_page (tmp);
     }
+  lock_acquire (&sup_page_table_lock);
   hash_delete (&sup_page_table, &page->hashelem);
+  lock_release (&sup_page_table_lock);
   free (page);
 }
 
