@@ -13,11 +13,11 @@
 static struct hash frame_hash;
 static struct list frame_list;
 static struct list_elem *clock_ptr;
-static size_t frame_count;
 static struct lock frame_lock;
 
 /* Try to find a frame to evict */
 static void *frame_evict (void);
+static struct list_elem *frame_next_frame_ (struct list_elem *);
 /* Helper functions for hash table. */
 static unsigned hash_func (const struct hash_elem *, void *UNUSED);
 static bool hash_less (const struct hash_elem *, const struct hash_elem *,
@@ -27,7 +27,6 @@ static bool hash_less (const struct hash_elem *, const struct hash_elem *,
 void
 frame_init (void)
 {
-  frame_count = 0;
   hash_init (&frame_hash, hash_func, hash_less, NULL);
   list_init (&frame_list);
   clock_ptr = NULL;
@@ -47,7 +46,7 @@ frame_alloc (enum palloc_flags flags, void *upage, struct page *page)
   if (kpage == NULL)
     kpage = frame_evict ();
   if (kpage == NULL)
-    PANIC ("Cannot evictict a frame");
+    PANIC ("Cannot evict a frame");
   struct frame *frame = (struct frame *)malloc (sizeof (struct frame));
   frame->kpage = kpage;
   frame->upage = upage;
@@ -82,44 +81,60 @@ frame_free (void *kpage)
   lock_release (&frame_lock);
 }
 
+/* Finds the next frame of CUR in the frame_list. */
+static struct list_elem *
+frame_next_frame_ (struct list_elem *cur)
+{
+  if (cur == NULL || list_next (cur) == list_end (&frame_list))
+    return list_begin (&frame_list);
+  return list_next (cur);
+}
+
 /* Evicts a frame from the frame table. */
 static void *
 frame_evict (void)
 {
   ASSERT (lock_held_by_current_thread (&frame_lock));
 
-  /* TODO: Currently we only select the first unpinned frame. */
   if (list_empty (&frame_list))
     return NULL;
-  struct list_elem *st = list_begin (&frame_list);
-  struct list_elem *ed = list_end (&frame_list);
-  struct frame *f = NULL;
-  for (struct list_elem *e = st; e != ed; e = list_next (e))
+  struct frame *victim = NULL;
+  if (clock_ptr == NULL)
+    clock_ptr = list_begin (&frame_list);
+  for (int cycle_cnt = 0; cycle_cnt <= 2;
+       clock_ptr = frame_next_frame_ (clock_ptr))
     {
-      struct frame *ff = list_entry (e, struct frame, listelem);
-      if (ff->pinned)
+      if (clock_ptr == list_begin (&frame_list))
+        ++cycle_cnt;
+      struct frame *f = list_entry (clock_ptr, struct frame, listelem);
+      if (f->pinned)
         continue;
-      f = ff;
+      if (pagedir_is_accessed (f->owner->pagedir, f->upage))
+        {
+          pagedir_set_accessed (f->owner->pagedir, f->upage, false);
+          continue;
+        }
+      victim = f;
       break;
     }
-  if (f == NULL)
+  if (victim == NULL)
     return NULL;
-  slot_id slot_idx = swap_out (f->kpage);
+  slot_id slot_idx = swap_out (victim->kpage);
   /* According to pintos document, we can panic if the swap is full. */
   ASSERT (slot_idx != SLOT_ERR);
 
   /* Unbound the page from the frame. */
-  pagedir_clear_page (f->owner->pagedir, f->upage);
-  f->sup_page->status = PAGE_SWAP;
-  f->sup_page->kpage = NULL;
-  f->sup_page->slot_idx = slot_idx;
-  f->sup_page = NULL;
+  pagedir_clear_page (victim->owner->pagedir, victim->upage);
+  victim->sup_page->status = PAGE_SWAP;
+  victim->sup_page->kpage = NULL;
+  victim->sup_page->slot_idx = slot_idx;
+  victim->sup_page = NULL;
 
   /* View the unbounded frame as a new frame. */
-  list_remove (&f->listelem);
-  hash_delete (&frame_hash, &f->hashelem);
+  list_remove (&victim->listelem);
+  hash_delete (&frame_hash, &victim->hashelem);
 
-  return f->kpage;
+  return victim->kpage;
 }
 
 static unsigned
