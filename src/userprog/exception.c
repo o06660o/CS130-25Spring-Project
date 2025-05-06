@@ -165,6 +165,7 @@ page_fault (struct intr_frame *f)
         {
           if (!page_full_load (fault_addr))
             process_exit (-1);
+
           if (held_filsys_lock)
             lock_acquire (&filesys_lock);
           return;

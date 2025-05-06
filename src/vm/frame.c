@@ -3,6 +3,7 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 #include "vm/swap.h"
 #include <debug.h>
 #include <stdint.h>
@@ -36,7 +37,7 @@ frame_init (void)
 /* Allocates a frame from user pool, returns its kernel virtual address.
    PAL_USER is automatically set.*/
 void *
-frame_alloc (enum palloc_flags flags, void *upage)
+frame_alloc (enum palloc_flags flags, void *upage, struct page *page)
 {
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (is_user_vaddr (upage));
@@ -52,6 +53,7 @@ frame_alloc (enum palloc_flags flags, void *upage)
   frame->upage = upage;
   frame->owner = thread_current ();
   frame->pinned = false;
+  frame->sup_page = page;
   hash_insert (&frame_hash, &frame->hashelem);
   list_push_back (&frame_list, &frame->listelem);
   lock_release (&frame_lock);
@@ -84,12 +86,29 @@ frame_free (void *kpage)
 static void *
 frame_evict (void)
 {
-  struct frame *f = NULL;
-  // TODO: find a frame to evict. Currently we only select the first frame.
-  f = list_entry (list_begin (&frame_list), struct frame, listelem);
+  /* TODO: find a frame to evict. Currently we only select the first frame. */
+  if (list_empty (&frame_list))
+    return NULL;
+  struct frame *f
+      = list_entry (list_begin (&frame_list), struct frame, listelem);
   if (f == NULL)
     return NULL;
-  slot_id _ UNUSED = swap_out (f->kpage);
+  slot_id slot_idx = swap_out (f->kpage);
+  /* According to pintos document, we can panic if the swap is full. */
+  ASSERT (slot_idx != SLOT_ERR);
+
+  /* Unbound the page from the frame. */
+  pagedir_clear_page (f->owner->pagedir, f->upage);
+  f->sup_page->status = PAGE_SWAP;
+  f->sup_page->kpage = NULL;
+  f->sup_page->slot_idx = slot_idx;
+  f->sup_page = NULL;
+
+  /* View the unbounded frame as a new frame. */
+  ASSERT (lock_held_by_current_thread (&frame_lock));
+  list_remove (&f->listelem);
+  hash_delete (&frame_hash, &f->hashelem);
+
   return f->kpage;
 }
 
