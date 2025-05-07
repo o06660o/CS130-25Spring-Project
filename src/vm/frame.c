@@ -150,15 +150,29 @@ frame_evict (void)
     }
   if (victim == NULL)
     return;
-  slot_id slot_idx = swap_out (victim->kpage);
-  /* According to pintos document, we can panic if the swap is full. */
-  ASSERT (slot_idx != SLOT_ERR);
+
+  /* Pages modified since load should be written to swap; while unmodified
+     pages should never be written to swap. */
+  ASSERT (victim->upage == victim->sup_page->upage);
+  if (pagedir_is_dirty (victim->owner->pagedir, victim->upage))
+    {
+      /* According to pintos document, we can panic if the swap is full. */
+      slot_id slot_idx = swap_out (victim->kpage);
+      if (slot_idx == SLOT_ERR)
+        PANIC ("swap is full");
+
+      victim->sup_page->status = PAGE_SWAP;
+      victim->sup_page->slot_idx = slot_idx;
+    }
+  else
+    {
+      victim->sup_page->status = PAGE_READY;
+      victim->sup_page->slot_idx = SLOT_ERR;
+    }
 
   /* Unbound the page from the frame. */
   pagedir_clear_page (victim->owner->pagedir, victim->upage);
-  victim->sup_page->status = PAGE_SWAP;
   victim->sup_page->kpage = NULL;
-  victim->sup_page->slot_idx = slot_idx;
   victim->sup_page = NULL;
 
   /* Free the frame. */

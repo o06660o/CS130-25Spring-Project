@@ -121,6 +121,9 @@ page_full_load (void *fault_addr)
   if (!pagedir_install_page (page->owner, page->upage, kpage, page->writable))
     goto fail;
   ASSERT (pagedir_get_page (page->owner->pagedir, page->upage) == kpage);
+  /* Remember to recover the dirty bit. */
+  if (page->status == PAGE_SWAP)
+    pagedir_set_dirty (page->owner->pagedir, page->upage, true);
 
   page->kpage = kpage;
   page->status = PAGE_FRAME;
