@@ -17,6 +17,8 @@ static struct lock frame_lock;
 
 /* Try to find a frame to evict */
 static void frame_evict (void);
+/* Helper functions for list. */
+static struct list_elem *next_frame_ (void);
 /* Helper functions for hash table. */
 static unsigned hash_func (const struct hash_elem *, void *UNUSED);
 static bool hash_less (const struct hash_elem *, const struct hash_elem *,
@@ -81,6 +83,8 @@ frame_free (void *kpage)
       return;
     }
   struct frame *frame = hash_entry (elem, struct frame, hashelem);
+  if (clock_ptr == &frame->listelem)
+    clock_ptr = next_frame_ ();
   palloc_free_page (frame->kpage);
   list_remove (&frame->listelem);
   free (frame);
@@ -105,6 +109,17 @@ frame_set_pinned (void *kpage, bool status)
   lock_release (&frame_lock);
 }
 
+/* Returns the frame after clock_ptr in frame_list. */
+static struct list_elem *
+next_frame_ (void)
+{
+  if (clock_ptr == list_end (&frame_list)
+      || list_next (clock_ptr) == list_end (&frame_list))
+    return list_begin (&frame_list);
+  else
+    return list_next (clock_ptr);
+}
+
 /* Evicts a frame from the frame table. */
 static void
 frame_evict (void)
@@ -121,12 +136,7 @@ frame_evict (void)
       if (clock_ptr == list_begin (&frame_list))
         ++cycle_cnt;
       struct frame *f = list_entry (clock_ptr, struct frame, listelem);
-
-      if (clock_ptr == list_end (&frame_list)
-          || list_next (clock_ptr) == list_end (&frame_list))
-        clock_ptr = list_begin (&frame_list);
-      else
-        clock_ptr = list_next (clock_ptr);
+      clock_ptr = next_frame_ ();
 
       if (f->pinned)
         continue;
