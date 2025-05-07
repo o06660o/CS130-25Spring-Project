@@ -18,7 +18,8 @@ struct frame
 };
 
 void frame_init (void);
-void *frame_alloc (enum palloc_flags, void *, struct page *);
+void *frame_alloc (enum palloc_flags, void *, struct page *, bool);
 void frame_free (void *);
+void frame_set_pinned (void *, bool);
 
 #endif /* vm/frame.h */

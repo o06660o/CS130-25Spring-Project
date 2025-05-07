@@ -36,7 +36,8 @@ frame_init (void)
 /* Allocates a frame from user pool, returns its kernel virtual address.
    PAL_USER is automatically set.*/
 void *
-frame_alloc (enum palloc_flags flags, void *upage, struct page *page)
+frame_alloc (enum palloc_flags flags, void *upage, struct page *page,
+             bool pinned)
 {
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (is_user_vaddr (upage));
@@ -51,7 +52,7 @@ frame_alloc (enum palloc_flags flags, void *upage, struct page *page)
   frame->kpage = kpage;
   frame->upage = upage;
   frame->owner = thread_current ();
-  frame->pinned = false;
+  frame->pinned = pinned;
   frame->sup_page = page;
   hash_insert (&frame_hash, &frame->hashelem);
   list_push_back (&frame_list, &frame->listelem);
@@ -78,6 +79,23 @@ frame_free (void *kpage)
   palloc_free_page (frame->kpage);
   list_remove (&frame->listelem);
   free (frame);
+  lock_release (&frame_lock);
+}
+
+/* Change pinned status of frame at KPAGE to STATUS. */
+void
+frame_set_pinned (void *kpage, bool status)
+{
+  ASSERT (pg_ofs (kpage) == 0);
+
+  lock_acquire (&frame_lock);
+  struct frame tmp;
+  tmp.kpage = kpage;
+  struct hash_elem *elem = hash_find (&frame_hash, &tmp.hashelem);
+  if (elem == NULL)
+    PANIC ("frame_set_pinned: frame not found");
+  struct frame *frame = hash_entry (elem, struct frame, hashelem);
+  frame->pinned = status;
   lock_release (&frame_lock);
 }
 

@@ -90,7 +90,7 @@ page_full_load (void *fault_addr)
     {
       ASSERT (page->kpage == NULL);
       ASSERT (page->slot_idx == SLOT_ERR);
-      kpage = frame_alloc (PAL_USER, page->upage, page);
+      kpage = frame_alloc (PAL_USER, page->upage, page, true);
       if (kpage == NULL)
         goto fail;
 
@@ -107,7 +107,7 @@ page_full_load (void *fault_addr)
     {
       ASSERT (page->kpage == NULL);
       ASSERT (page->slot_idx != SLOT_ERR);
-      kpage = frame_alloc (PAL_USER, page->upage, page);
+      kpage = frame_alloc (PAL_USER, page->upage, page, true);
       if (kpage == NULL)
         goto fail;
 
@@ -124,6 +124,7 @@ page_full_load (void *fault_addr)
 
   page->kpage = kpage;
   page->status = PAGE_FRAME;
+  frame_set_pinned (kpage, false);
   return true;
 
 fail:
