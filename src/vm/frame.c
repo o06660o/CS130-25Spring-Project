@@ -16,8 +16,7 @@ static struct list_elem *clock_ptr;
 static struct lock frame_lock;
 
 /* Try to find a frame to evict */
-static void *frame_evict (void);
-static struct list_elem *frame_next_frame_ (struct list_elem *);
+static void frame_evict (void);
 /* Helper functions for hash table. */
 static unsigned hash_func (const struct hash_elem *, void *UNUSED);
 static bool hash_less (const struct hash_elem *, const struct hash_elem *,
@@ -29,7 +28,7 @@ frame_init (void)
 {
   hash_init (&frame_hash, hash_func, hash_less, NULL);
   list_init (&frame_list);
-  clock_ptr = NULL;
+  clock_ptr = list_begin (&frame_list);
   lock_init (&frame_lock);
 }
 
@@ -45,7 +44,10 @@ frame_alloc (enum palloc_flags flags, void *upage, struct page *page,
   lock_acquire (&frame_lock);
   void *kpage = palloc_get_page (flags | PAL_USER);
   if (kpage == NULL)
-    kpage = frame_evict ();
+    {
+      frame_evict ();
+      kpage = palloc_get_page (flags | PAL_USER);
+    }
   if (kpage == NULL)
     PANIC ("Cannot evict a frame");
   struct frame *frame = (struct frame *)malloc (sizeof (struct frame));
@@ -55,7 +57,7 @@ frame_alloc (enum palloc_flags flags, void *upage, struct page *page,
   frame->pinned = pinned;
   frame->sup_page = page;
   hash_insert (&frame_hash, &frame->hashelem);
-  list_push_back (&frame_list, &frame->listelem);
+  list_insert (clock_ptr, &frame->listelem);
   lock_release (&frame_lock);
   return kpage;
 }
@@ -66,20 +68,24 @@ frame_free (void *kpage)
 {
   ASSERT (pg_ofs (kpage) == 0);
 
-  lock_acquire (&frame_lock);
+  bool lock_already_held = lock_held_by_current_thread (&frame_lock);
+  if (!lock_already_held)
+    lock_acquire (&frame_lock);
   struct frame tmp;
   tmp.kpage = kpage;
   struct hash_elem *elem = hash_delete (&frame_hash, &tmp.hashelem);
   if (elem == NULL)
     {
-      lock_release (&frame_lock);
+      if (!lock_already_held)
+        lock_release (&frame_lock);
       return;
     }
   struct frame *frame = hash_entry (elem, struct frame, hashelem);
   palloc_free_page (frame->kpage);
   list_remove (&frame->listelem);
   free (frame);
-  lock_release (&frame_lock);
+  if (!lock_already_held)
+    lock_release (&frame_lock);
 }
 
 /* Change pinned status of frame at KPAGE to STATUS. */
@@ -99,32 +105,29 @@ frame_set_pinned (void *kpage, bool status)
   lock_release (&frame_lock);
 }
 
-/* Finds the next frame of CUR in the frame_list. */
-static struct list_elem *
-frame_next_frame_ (struct list_elem *cur)
-{
-  if (cur == NULL || list_next (cur) == list_end (&frame_list))
-    return list_begin (&frame_list);
-  return list_next (cur);
-}
-
 /* Evicts a frame from the frame table. */
-static void *
+static void
 frame_evict (void)
 {
   ASSERT (lock_held_by_current_thread (&frame_lock));
 
   if (list_empty (&frame_list))
-    return NULL;
+    return;
   struct frame *victim = NULL;
   if (clock_ptr == NULL)
     clock_ptr = list_begin (&frame_list);
-  for (int cycle_cnt = 0; cycle_cnt <= 2;
-       clock_ptr = frame_next_frame_ (clock_ptr))
+  for (int cycle_cnt = 0; cycle_cnt <= 2;)
     {
       if (clock_ptr == list_begin (&frame_list))
         ++cycle_cnt;
       struct frame *f = list_entry (clock_ptr, struct frame, listelem);
+
+      if (clock_ptr == list_end (&frame_list)
+          || list_next (clock_ptr) == list_end (&frame_list))
+        clock_ptr = list_begin (&frame_list);
+      else
+        clock_ptr = list_next (clock_ptr);
+
       if (f->pinned)
         continue;
       if (pagedir_is_accessed (f->owner->pagedir, f->upage))
@@ -136,7 +139,7 @@ frame_evict (void)
       break;
     }
   if (victim == NULL)
-    return NULL;
+    return;
   slot_id slot_idx = swap_out (victim->kpage);
   /* According to pintos document, we can panic if the swap is full. */
   ASSERT (slot_idx != SLOT_ERR);
@@ -148,11 +151,8 @@ frame_evict (void)
   victim->sup_page->slot_idx = slot_idx;
   victim->sup_page = NULL;
 
-  /* View the unbounded frame as a new frame. */
-  list_remove (&victim->listelem);
-  hash_delete (&frame_hash, &victim->hashelem);
-
-  return victim->kpage;
+  /* Free the frame. */
+  frame_free (victim->kpage);
 }
 
 static unsigned
