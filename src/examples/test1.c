@@ -1,4 +1,4 @@
-/* test.c
+/* test1.c
 
    Currently, this file tests the behavior when a parent process terminates
    before its child.
@@ -12,12 +12,11 @@
 */
 
 /*
-pintos -- -f -q \
-&& cd ../../examples/ \
-&& make \
-&& cd ../userprog/build/ \
-&& pintos -p ../../examples/test -a test -- -q \
-&& pintos -- -q run "test qwq 3 0"
+cd ../../examples/ && \
+make && \
+cd ../userprog/build/ && \
+pintos --filesys-size=2 -p ../../examples/test1 -a test1 \
+-- -q -f run "test1 qwq 3 0"
 */
 
 #include <stdio.h>
@@ -33,7 +32,7 @@ main (int argc, char *argv[])
 
   if (argc != 4)
     {
-      printf ("usage: test qwq 3 0\n");
+      printf ("usage: test1 qwq 3 0\n");
       exit (1);
     }
 
@@ -43,7 +42,7 @@ main (int argc, char *argv[])
   /* Execute child and wait for it to finish if requested. */
   if (atoi (argv[2]) != 0)
     {
-      snprintf (buffer, sizeof buffer, "test %s %d %s", argv[1],
+      snprintf (buffer, sizeof buffer, "test1 %s %d %s", argv[1],
                 atoi (argv[2]) - 1, argv[3]);
       pid = exec (buffer);
 
