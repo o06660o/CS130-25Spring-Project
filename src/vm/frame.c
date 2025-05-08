@@ -1,4 +1,6 @@
 #include "vm/frame.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
@@ -70,6 +72,8 @@ frame_free (void *kpage)
 {
   ASSERT (pg_ofs (kpage) == 0);
 
+  if (kpage == NULL)
+    return;
   bool lock_already_held = lock_held_by_current_thread (&frame_lock);
   if (!lock_already_held)
     lock_acquire (&frame_lock);
@@ -98,15 +102,17 @@ frame_set_pinned (void *kpage, bool status)
 {
   ASSERT (pg_ofs (kpage) == 0);
 
-  lock_acquire (&frame_lock);
+  bool lock_already_held = lock_held_by_current_thread (&frame_lock);
+  if (!lock_already_held)
+    lock_acquire (&frame_lock);
   struct frame tmp;
   tmp.kpage = kpage;
   struct hash_elem *elem = hash_find (&frame_hash, &tmp.hashelem);
-  if (elem == NULL)
-    PANIC ("frame_set_pinned: frame not found");
+  ASSERT (elem != NULL);
   struct frame *frame = hash_entry (elem, struct frame, hashelem);
   frame->pinned = status;
-  lock_release (&frame_lock);
+  if (!lock_already_held)
+    lock_release (&frame_lock);
 }
 
 /* Returns the frame after clock_ptr in frame_list. */
@@ -154,20 +160,60 @@ frame_evict (void)
   /* Pages modified since load should be written to swap; while unmodified
      pages should never be written to swap. */
   ASSERT (victim->upage == victim->sup_page->upage);
-  if (pagedir_is_dirty (victim->owner->pagedir, victim->upage))
+  if (victim->sup_page->type == PAGE_ALLOC)
     {
-      /* According to pintos document, we can panic if the swap is full. */
-      slot_id slot_idx = swap_out (victim->kpage);
-      if (slot_idx == SLOT_ERR)
-        PANIC ("swap is full");
-
-      victim->sup_page->status = PAGE_SWAP;
-      victim->sup_page->slot_idx = slot_idx;
+      if (pagedir_is_dirty (victim->owner->pagedir, victim->upage))
+        {
+          /* According to pintos document, we can panic if the swap is full. */
+          slot_id slot_idx = swap_out (victim->kpage);
+          if (slot_idx == SLOT_ERR)
+            PANIC ("swap is full");
+          victim->sup_page->slot_idx = slot_idx;
+        }
+      else
+        {
+          victim->sup_page->type = PAGE_UNALLOC;
+          victim->sup_page->slot_idx = SLOT_ERR;
+        }
     }
   else
     {
-      victim->sup_page->status = PAGE_READY;
-      victim->sup_page->slot_idx = SLOT_ERR;
+      /* Below is the logic of evict a file backed page. It is
+         completed but needs further check. */
+      PANIC ("frame_evict: implementation incomplete");
+
+      ASSERT (victim->sup_page->type == PAGE_FILE);
+      if (pagedir_is_dirty (victim->owner->pagedir, victim->upage))
+        {
+          if (lock_held_by_current_thread (&filesys_lock))
+            file_write_at (victim->sup_page->file, victim->kpage,
+                           victim->sup_page->read_bytes,
+                           victim->sup_page->ofs);
+          else if (lock_try_acquire (&filesys_lock))
+            {
+              ASSERT (lock_held_by_current_thread (&filesys_lock))
+              file_write_at (victim->sup_page->file, victim->kpage,
+                             victim->sup_page->read_bytes,
+                             victim->sup_page->ofs);
+              lock_release (&filesys_lock);
+            }
+          else
+            {
+              /* To avoid deadlock, we need to release frame_lock first.
+                 Before release the frame_lock, we need to ensure that
+                 victim frame won't be evicted again. */
+              frame_set_pinned (victim->kpage, true);
+              lock_release (&frame_lock);
+              lock_acquire (&filesys_lock);
+              file_write_at (victim->sup_page->file, victim->kpage,
+                             victim->sup_page->read_bytes,
+                             victim->sup_page->ofs);
+              lock_release (&filesys_lock);
+              lock_acquire (&frame_lock);
+              frame_set_pinned (victim->kpage, false);
+            }
+          pagedir_set_dirty (victim->owner->pagedir, victim->upage, false);
+        }
     }
 
   /* Unbound the page from the frame. */

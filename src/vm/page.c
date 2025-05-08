@@ -30,10 +30,11 @@ page_init (void)
   hash_init (&sup_page_table, hash_func, hash_less, NULL);
 }
 
-/* Lazy allocates a page, but do not insert it into page directory. */
+/* Lazy allocates an anonymous page, but do not insert it into page
+   directory. */
 bool
-page_lazy_load (struct file *file, off_t ofs, void *upage, uint32_t read_bytes,
-                uint32_t zero_bytes, bool writable)
+page_lazy_load_anon (struct file *file, off_t ofs, void *upage,
+                     uint32_t read_bytes, uint32_t zero_bytes, bool writable)
 {
   struct page *page = malloc (sizeof (struct page));
   if (page == NULL)
@@ -42,7 +43,7 @@ page_lazy_load (struct file *file, off_t ofs, void *upage, uint32_t read_bytes,
   ASSERT (pg_round_down (upage) == upage);
 
   lock_acquire (&sup_page_table_lock);
-  page->status = PAGE_READY;
+  page->type = PAGE_UNALLOC;
   page->kpage = NULL;
   page->slot_idx = SLOT_ERR;
 
@@ -58,6 +59,15 @@ page_lazy_load (struct file *file, off_t ofs, void *upage, uint32_t read_bytes,
   list_push_back (&page->owner->page_list, &page->listelem);
   lock_release (&sup_page_table_lock);
   return true;
+}
+
+/* Lazy allocates a file backed page, but do not insert it into page
+   directory. */
+bool
+page_lazy_load_file (void)
+{
+  // TODO
+  return false;
 }
 
 /* Converts a fault address to a page. */
@@ -86,7 +96,7 @@ page_full_load (void *fault_addr)
     goto fail;
   ASSERT (page->owner == thread_current ());
 
-  if (page->status == PAGE_READY)
+  if (page->type == PAGE_UNALLOC)
     {
       ASSERT (page->kpage == NULL);
       ASSERT (page->slot_idx == SLOT_ERR);
@@ -103,7 +113,7 @@ page_full_load (void *fault_addr)
 
       memset (kpage + page->read_bytes, 0, page->zero_bytes);
     }
-  else if (page->status == PAGE_SWAP)
+  else if (page->type == PAGE_ALLOC)
     {
       ASSERT (page->kpage == NULL);
       ASSERT (page->slot_idx != SLOT_ERR);
@@ -115,23 +125,26 @@ page_full_load (void *fault_addr)
         goto fail;
     }
   else
-    PANIC ("page_full_load: page status is not PAGE_READY or PAGE_SWAP");
+    {
+      ASSERT (page->type == PAGE_FILE);
+      // TODO
+    }
 
   ASSERT (kpage != NULL);
   if (!pagedir_install_page (page->owner, page->upage, kpage, page->writable))
     goto fail;
   ASSERT (pagedir_get_page (page->owner->pagedir, page->upage) == kpage);
   /* Remember to recover the dirty bit. */
-  if (page->status == PAGE_SWAP)
+  if (page->type == PAGE_ALLOC)
     pagedir_set_dirty (page->owner->pagedir, page->upage, true);
 
   page->kpage = kpage;
-  page->status = PAGE_FRAME;
+  if (page->type == PAGE_UNALLOC)
+    page->type = PAGE_ALLOC;
   frame_set_pinned (kpage, false);
   return true;
 
 fail:
-  ASSERT (page->status != PAGE_FRAME);
   if (kpage != NULL)
     frame_free (kpage);
   return false;
@@ -142,20 +155,29 @@ page_free (struct page *page)
 {
   if (page == NULL)
     return;
-  if (page->status == PAGE_FRAME)
+  if (page->type == PAGE_FILE)
     {
-      frame_free (page->kpage);
-      pagedir_clear_page (page->owner->pagedir, page->upage);
-      pagedir_set_accessed (page->owner->pagedir, page->upage, false);
-      pagedir_set_dirty (page->owner->pagedir, page->upage, false);
+      // TODO
     }
-  else if (page->status == PAGE_SWAP)
+  else if (page->type == PAGE_ALLOC)
     {
-      void *tmp = palloc_get_page (0);
-      /* XXX: will we fail to allocate memory from the kernel pool? */
-      ASSERT (tmp != NULL);
-      ASSERT (swap_in (page->slot_idx, tmp));
-      palloc_free_page (tmp);
+      if (page->kpage != NULL)
+        {
+          frame_free (page->kpage);
+          page->kpage = NULL;
+          pagedir_set_accessed (page->owner->pagedir, page->upage, false);
+          pagedir_set_dirty (page->owner->pagedir, page->upage, false);
+          pagedir_clear_page (page->owner->pagedir, page->upage);
+        }
+      else
+        {
+          ASSERT (page->slot_idx != SLOT_ERR);
+          void *tmp = palloc_get_page (0);
+          /* XXX: will we fail to allocate memory from the kernel pool? */
+          ASSERT (tmp != NULL);
+          ASSERT (swap_in (page->slot_idx, tmp));
+          palloc_free_page (tmp);
+        }
     }
   lock_acquire (&sup_page_table_lock);
   hash_delete (&sup_page_table, &page->hashelem);

@@ -578,8 +578,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 #ifdef VM
       /* Lazy load this page. */
-      if (!page_lazy_load (file, ofs, upage, page_read_bytes, page_zero_bytes,
-                           writable))
+      if (!page_lazy_load_anon (file, ofs, upage, page_read_bytes,
+                                page_zero_bytes, writable))
         return false;
 #else
       /* Get a page of memory. */
