@@ -16,7 +16,7 @@ insult
 lineup
 matmult
 recursor
-test
+test*
 *.d
 *.o
 *.a
