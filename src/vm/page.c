@@ -179,6 +179,7 @@ page_free (struct page *page)
           palloc_free_page (tmp);
         }
     }
+  list_remove (&page->listelem);
   lock_acquire (&sup_page_table_lock);
   hash_delete (&sup_page_table, &page->hashelem);
   lock_release (&sup_page_table_lock);
