@@ -178,10 +178,6 @@ frame_evict (void)
     }
   else
     {
-      /* Below is the logic of evict a file backed page. It is
-         completed but needs further check. */
-      PANIC ("frame_evict: implementation incomplete");
-
       ASSERT (victim->sup_page->type == PAGE_FILE);
       if (pagedir_is_dirty (victim->owner->pagedir, victim->upage))
         {

@@ -3,8 +3,8 @@
 #include <debug.h>
 
 static int next (int pos);
-static void wait (struct intq *q, struct thread **waiter);
-static void signal (struct intq *q, struct thread **waiter);
+static void _wait (struct intq *q, struct thread **waiter);
+static void _signal (struct intq *q, struct thread **waiter);
 
 /* Initializes interrupt queue Q. */
 void
@@ -44,13 +44,13 @@ intq_getc (struct intq *q)
     {
       ASSERT (!intr_context ());
       lock_acquire (&q->lock);
-      wait (q, &q->not_empty);
+      _wait (q, &q->not_empty);
       lock_release (&q->lock);
     }
 
   byte = q->buf[q->tail];
   q->tail = next (q->tail);
-  signal (q, &q->not_full);
+  _signal (q, &q->not_full);
   return byte;
 }
 
@@ -65,13 +65,13 @@ intq_putc (struct intq *q, uint8_t byte)
     {
       ASSERT (!intr_context ());
       lock_acquire (&q->lock);
-      wait (q, &q->not_full);
+      _wait (q, &q->not_full);
       lock_release (&q->lock);
     }
 
   q->buf[q->head] = byte;
   q->head = next (q->head);
-  signal (q, &q->not_empty);
+  _signal (q, &q->not_empty);
 }
 
 /* Returns the position after POS within an intq. */
@@ -84,7 +84,7 @@ next (int pos)
 /* WAITER must be the address of Q's not_empty or not_full
    member.  Waits until the given condition is true. */
 static void
-wait (struct intq *q UNUSED, struct thread **waiter)
+_wait (struct intq *q UNUSED, struct thread **waiter)
 {
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
@@ -100,7 +100,7 @@ wait (struct intq *q UNUSED, struct thread **waiter)
    thread is waiting for the condition, wakes it up and resets
    the waiting thread. */
 static void
-signal (struct intq *q UNUSED, struct thread **waiter)
+_signal (struct intq *q UNUSED, struct thread **waiter)
 {
   ASSERT (intr_get_level () == INTR_OFF);
   ASSERT ((waiter == &q->not_empty && !intq_empty (q))

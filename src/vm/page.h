@@ -13,7 +13,7 @@ enum page_type
 {
   PAGE_UNALLOC, /* Unallocated anonymous page. */
   PAGE_ALLOC,   /* Allocated anonymous page. */
-  PAGE_FILE     /* File backed page. */
+  PAGE_FILE     /* Memory mapped page. */
 };
 
 /* Page is a kind of abstraction to the memory a user program uses.
@@ -44,10 +44,9 @@ struct page
 };
 
 void page_init (void);
-bool page_lazy_load_anon (struct file *file, off_t ofs, void *upage,
-                          uint32_t read_bytes, uint32_t zero_bytes,
-                          bool writable);
-bool page_lazy_load_file (void);
+bool page_lazy_load (struct file *file, off_t ofs, void *upage,
+                     uint32_t read_bytes, uint32_t zero_bytes, bool writable,
+                     enum page_type);
 bool page_full_load (void *fault_addr);
 bool page_full_load_stack (void *upage);
 void page_free (struct page *);

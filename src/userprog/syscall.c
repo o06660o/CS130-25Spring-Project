@@ -5,19 +5,30 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/interrupt.h"
+#include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
+#include "vm/page.h"
 #include <bitmap.h>
 #include <lib/user/syscall.h>
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <userprog/pagedir.h>
 
 /* file descriptor table. */
 static struct bitmap *fd_table; /* Tracking allocated (1) and free (0) fds. */
 static struct file *fd_entry[OPEN_FILE_MAX]; /* Maps fd to struct file *. */
 static tid_t fd_owner[OPEN_FILE_MAX];        /* thread tid owning each fd. */
 static struct lock fd_table_lock; /* Mutex protection for fd table access. */
+
+/* Mmap file table. */
+static struct hash mmap_table;
+static struct lock mmap_table_lock; /* Mutex protection for mmap table. */
+static unsigned hash_func (const struct hash_elem *, void *UNUSED);
+static bool hash_less (const struct hash_elem *, const struct hash_elem *,
+                       void *UNUSED);
+static struct mmap_data *hash_query (mapid_t mapping, tid_t owner);
 
 /* Read data from the user stack, ESP won't be modified. */
 #define READ(esp, delta, type)                                                \
@@ -41,16 +52,22 @@ static int write_ (int fd, const void *buffer, unsigned size);
 static void seek_ (int fd, unsigned position);
 static unsigned tell_ (int fd);
 static void close_ (int fd);
+static mapid_t mmap_ (int fd, void *addr);
+static void munmap_ (mapid_t mapping);
 
 void
 syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+
   fd_table = bitmap_create (OPEN_FILE_MAX);
   bitmap_set_multiple (fd_table, 0, 2, true);
   lock_init (&fd_table_lock);
   for (int i = 0; i < OPEN_FILE_MAX; ++i)
     fd_owner[i] = TID_ERROR;
+
+  hash_init (&mmap_table, hash_func, hash_less, NULL);
+  lock_init (&mmap_table_lock);
 }
 
 /* Reads data from the user stack. Only checks that the address is not
@@ -98,7 +115,9 @@ is_valid_buf (const void *ptr, size_t size)
 static void
 syscall_handler (struct intr_frame *f)
 {
+#ifdef VM
   thread_current ()->user_esp = f->esp;
+#endif
 
   size_t delta = 0;
   int syscall_num = READ (f->esp, delta, int);
@@ -188,6 +207,22 @@ syscall_handler (struct intr_frame *f)
       {
         int fd = READ (f->esp, delta, int);
         close_ (fd);
+        break;
+      }
+    case SYS_MMAP: /* Memory map a file. */
+      {
+
+        int fd = READ (f->esp, delta, int);
+        void *addr = READ (f->esp, delta, void *);
+        if (!is_valid_buf (addr, sizeof (addr)))
+          exit_ (-1);
+        f->eax = mmap_ (fd, addr);
+        break;
+      }
+    case SYS_MUNMAP: /* Unmap a memory mapped file. */
+      {
+        mapid_t mapping = READ (f->esp, delta, mapid_t);
+        munmap_ (mapping);
         break;
       }
 
@@ -398,4 +433,127 @@ close_ (int fd)
   fd_owner[fd] = TID_ERROR;
   fd_entry[fd] = NULL;
   lock_release (&fd_table_lock);
+}
+
+/* The mmap syscall. */
+static mapid_t
+mmap_ (int fd, void *addr)
+{
+  struct thread *cur = thread_current ();
+  /* Invalid input. */
+  if (addr == NULL || pg_ofs (addr) != 0)
+    return -1;
+  if (fd < 0 || fd == STDIN_FILENO || fd == STDOUT_FILENO)
+    return -1;
+  if (fd_owner[fd] != cur->tid || fd_entry[fd] == NULL)
+    return -1;
+
+  struct file *open_file = fd_entry[fd];
+  lock_acquire (&filesys_lock);
+  off_t file_size = file_length (open_file);
+  lock_release (&filesys_lock);
+
+  /* Still invalid input. */
+  if (file_size == 0)
+    return -1;
+  for (off_t i = 0; i < file_size; i += PGSIZE)
+    if (get_page (addr + i, cur) != NULL)
+      return -1;
+
+  for (off_t i = 0; i < file_size; i += PGSIZE)
+    {
+      uint32_t read_bytes = i + PGSIZE < file_size ? PGSIZE : file_size - i;
+      if (!page_lazy_load (open_file, i, addr + i, read_bytes,
+                           PGSIZE - read_bytes, true, PAGE_FILE))
+        {
+          /* TODO: free allocated lazy pages */
+          return -1;
+        }
+    }
+
+  struct mmap_data *mmap_data = malloc (sizeof (struct mmap_data));
+  if (mmap_data == NULL)
+    {
+      /* TODO: free allocated lazy pages */
+      return -1;
+    }
+  mmap_data->file = open_file;
+  mmap_data->mapping = cur->mapid_next++;
+  mmap_data->owner = cur->tid;
+  mmap_data->uaddr = addr;
+  mmap_data->fd = fd;
+  lock_acquire (&mmap_table_lock);
+  hash_insert (&mmap_table, &mmap_data->hashelem);
+  lock_release (&mmap_table_lock);
+  return mmap_data->mapping;
+}
+
+/* The munmap syscall. */
+static void
+munmap_ (mapid_t mapping)
+{
+  struct thread *cur = thread_current ();
+  struct mmap_data *mmap_data = hash_query (mapping, cur->tid);
+  if (mmap_data == NULL)
+    return;
+
+  lock_acquire (&filesys_lock);
+  off_t len = file_length (mmap_data->file);
+  for (off_t i = 0; i < len; i += PGSIZE)
+    {
+      struct page *page = get_page (mmap_data->uaddr + i, cur);
+      ASSERT (page != NULL);
+      if (page->kpage == NULL)
+        page_full_load (mmap_data->uaddr + i);
+      if (pagedir_is_dirty (cur->pagedir, mmap_data->uaddr + i))
+        {
+          file_seek (mmap_data->file, i);
+          file_write (mmap_data->file, page->kpage, page->read_bytes);
+        }
+      page_free (page);
+    }
+  lock_release (&filesys_lock);
+  close_ (mmap_data->fd);
+
+  lock_acquire (&mmap_table_lock);
+  hash_delete (&mmap_table, &mmap_data->hashelem);
+  lock_release (&mmap_table_lock);
+  free (mmap_data);
+}
+
+/* Global interface for munmap syscall. */
+void
+syscall_munmap (mapid_t mapping)
+{
+  munmap_ (mapping);
+}
+
+static unsigned
+hash_func (const struct hash_elem *elem, void *aux UNUSED)
+{
+  const struct mmap_data *data = hash_entry (elem, struct mmap_data, hashelem);
+  unsigned h1 = hash_int (data->mapping), h2 = hash_int (data->owner);
+  return h1 ^ h2;
+}
+static bool
+hash_less (const struct hash_elem *lhs, const struct hash_elem *rhs,
+           void *aux UNUSED)
+{
+  const struct mmap_data *lhs_ = hash_entry (lhs, struct mmap_data, hashelem);
+  const struct mmap_data *rhs_ = hash_entry (rhs, struct mmap_data, hashelem);
+  return lhs_->mapping < rhs_->mapping
+         || (lhs_->mapping == rhs_->mapping && lhs_->owner < rhs_->owner);
+}
+
+static struct mmap_data *
+hash_query (mapid_t mapping, tid_t owner)
+{
+  struct mmap_data tmp = {
+    .mapping = mapping,
+    .owner = owner,
+  };
+  lock_acquire (&mmap_table_lock);
+  struct hash_elem *e = hash_find (&mmap_table, &tmp.hashelem);
+  lock_release (&mmap_table_lock);
+  return e != NULL ? hash_entry (e, struct mmap_data, hashelem) : NULL;
 }

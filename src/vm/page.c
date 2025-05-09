@@ -29,11 +29,10 @@ page_init (void)
   hash_init (&sup_page_table, hash_func, hash_less, NULL);
 }
 
-/* Lazy allocates an anonymous page, but do not insert it into page
-   directory. */
+/* Lazy allocates a page, but do not insert it into page directory. */
 bool
-page_lazy_load_anon (struct file *file, off_t ofs, void *upage,
-                     uint32_t read_bytes, uint32_t zero_bytes, bool writable)
+page_lazy_load (struct file *file, off_t ofs, void *upage, uint32_t read_bytes,
+                uint32_t zero_bytes, bool writable, enum page_type type)
 {
   struct page *page = malloc (sizeof (struct page));
   if (page == NULL)
@@ -42,7 +41,8 @@ page_lazy_load_anon (struct file *file, off_t ofs, void *upage,
   ASSERT (pg_round_down (upage) == upage);
 
   lock_acquire (&sup_page_table_lock);
-  page->type = PAGE_UNALLOC;
+
+  page->type = type;
   page->kpage = NULL;
   page->slot_idx = SLOT_ERR;
 
@@ -54,19 +54,12 @@ page_lazy_load_anon (struct file *file, off_t ofs, void *upage,
   page->writable = writable;
 
   page->owner = thread_current ();
+
   hash_insert (&sup_page_table, &page->hashelem);
-  list_push_back (&page->owner->page_list, &page->listelem);
+  if (type == PAGE_UNALLOC)
+    list_push_back (&page->owner->page_list, &page->listelem);
   lock_release (&sup_page_table_lock);
   return true;
-}
-
-/* Lazy allocates a file backed page, but do not insert it into page
-   directory. */
-bool
-page_lazy_load_file (void)
-{
-  // TODO
-  return false;
 }
 
 /* Converts a fault address to a page. */
@@ -95,7 +88,7 @@ page_full_load (void *fault_addr)
     goto fail;
   ASSERT (page->owner == thread_current ());
 
-  if (page->type == PAGE_UNALLOC)
+  if (page->type == PAGE_UNALLOC || page->type == PAGE_FILE)
     {
       ASSERT (page->kpage == NULL);
       ASSERT (page->slot_idx == SLOT_ERR);
@@ -103,12 +96,18 @@ page_full_load (void *fault_addr)
       if (kpage == NULL)
         goto fail;
 
-      lock_acquire (&filesys_lock);
-      file_seek (page->file, page->ofs);
-      off_t read = file_read (page->file, kpage, page->read_bytes);
-      lock_release (&filesys_lock);
-      if (read != (off_t)page->read_bytes)
-        goto fail;
+      if (page->read_bytes != 0)
+        {
+          bool held_filesys_lock = lock_held_by_current_thread (&filesys_lock);
+          if (!held_filesys_lock)
+            lock_acquire (&filesys_lock);
+          file_seek (page->file, page->ofs);
+          off_t read = file_read (page->file, kpage, page->read_bytes);
+          if (!held_filesys_lock)
+            lock_release (&filesys_lock);
+          if (read != (off_t)page->read_bytes)
+            goto fail;
+        }
 
       memset (kpage + page->read_bytes, 0, page->zero_bytes);
     }
@@ -123,13 +122,7 @@ page_full_load (void *fault_addr)
       if (!swap_in (page->slot_idx, kpage))
         goto fail;
     }
-  else
-    {
-      ASSERT (page->type == PAGE_FILE);
-      // TODO
-    }
 
-  ASSERT (kpage != NULL);
   if (!pagedir_install_page (page->owner, page->upage, kpage, page->writable))
     goto fail;
   ASSERT (pagedir_get_page (page->owner->pagedir, page->upage) == kpage);
@@ -154,11 +147,7 @@ page_free (struct page *page)
 {
   if (page == NULL)
     return;
-  if (page->type == PAGE_FILE)
-    {
-      // TODO
-    }
-  else if (page->type == PAGE_ALLOC)
+  if (page->type == PAGE_ALLOC || page->type == PAGE_FILE)
     {
       if (page->kpage != NULL)
         {
@@ -178,7 +167,8 @@ page_free (struct page *page)
           palloc_free_page (tmp);
         }
     }
-  list_remove (&page->listelem);
+  if (page->type != PAGE_FILE)
+    list_remove (&page->listelem);
   lock_acquire (&sup_page_table_lock);
   hash_delete (&sup_page_table, &page->hashelem);
   lock_release (&sup_page_table_lock);

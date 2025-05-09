@@ -526,6 +526,7 @@ init_thread (struct thread *t, const char *name, int priority)
 #ifdef VM
   list_init (&t->page_list);
   t->user_esp = (void *)0xdeadbeef;
+  t->mapid_next = 1;
 #endif
 
   old_level = intr_disable ();

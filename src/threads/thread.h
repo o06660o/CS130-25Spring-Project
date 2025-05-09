@@ -7,6 +7,9 @@
 #include <heap.h>
 #include <list.h>
 #include <stdint.h>
+#ifdef VM
+#include <lib/user/syscall.h>
+#endif
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -141,6 +144,7 @@ struct thread
 #ifdef VM
   struct list page_list; /* Pages a user process owns. */
   void *user_esp; /* Stores esp on the transition from user to kernel mode */
+  mapid_t mapid_next; /* Next mapid for this process. */
 #endif
 
   /* Owned by thread.c. */
