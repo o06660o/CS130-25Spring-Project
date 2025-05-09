@@ -450,7 +450,8 @@ mmap_ (int fd, void *addr)
 
   struct file *open_file = fd_entry[fd];
   lock_acquire (&filesys_lock);
-  off_t file_size = file_length (open_file);
+  struct file *file = file_reopen (open_file);
+  off_t file_size = file_length (file);
   lock_release (&filesys_lock);
 
   /* Still invalid input. */
@@ -460,32 +461,38 @@ mmap_ (int fd, void *addr)
     if (get_page (addr + i, cur) != NULL)
       return -1;
 
-  for (off_t i = 0; i < file_size; i += PGSIZE)
+  off_t i;
+  for (i = 0; i < file_size; i += PGSIZE)
     {
       uint32_t read_bytes = i + PGSIZE < file_size ? PGSIZE : file_size - i;
-      if (!page_lazy_load (open_file, i, addr + i, read_bytes,
-                           PGSIZE - read_bytes, true, PAGE_FILE))
-        {
-          /* TODO: free allocated lazy pages */
-          return -1;
-        }
+      if (!page_lazy_load (file, i, addr + i, read_bytes, PGSIZE - read_bytes,
+                           true, PAGE_FILE))
+        goto fail;
     }
 
   struct mmap_data *mmap_data = malloc (sizeof (struct mmap_data));
   if (mmap_data == NULL)
-    {
-      /* TODO: free allocated lazy pages */
-      return -1;
-    }
-  mmap_data->file = open_file;
+    goto fail;
+  mmap_data->file = file;
   mmap_data->mapping = cur->mapid_next++;
   mmap_data->owner = cur->tid;
   mmap_data->uaddr = addr;
-  mmap_data->fd = fd;
   lock_acquire (&mmap_table_lock);
   hash_insert (&mmap_table, &mmap_data->hashelem);
   lock_release (&mmap_table_lock);
   return mmap_data->mapping;
+
+fail:
+  while (i >= 0)
+    {
+      struct page *page = get_page (addr + i, cur);
+      page_free (page);
+      i -= PGSIZE;
+    }
+  lock_acquire (&filesys_lock);
+  file_close (file);
+  lock_release (&filesys_lock);
+  return -1;
 }
 
 /* The munmap syscall. */
@@ -512,8 +519,8 @@ munmap_ (mapid_t mapping)
         }
       page_free (page);
     }
+  file_close (mmap_data->file);
   lock_release (&filesys_lock);
-  close_ (mmap_data->fd);
 
   lock_acquire (&mmap_table_lock);
   hash_delete (&mmap_table, &mmap_data->hashelem);

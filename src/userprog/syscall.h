@@ -14,7 +14,6 @@ struct mmap_data
   struct hash_elem hashelem;
   tid_t owner;
   void *uaddr;
-  int fd;
 };
 
 void syscall_init (void);
