@@ -162,10 +162,11 @@ page_fault (struct intr_frame *f)
 
   /* Sorry for the messy code here. */
   void *stack_bottom = pg_round_down (fault_addr);
-  if (get_page (fault_addr, t) == NULL && is_user_vaddr (fault_addr)
-      && (uint8_t *)fault_addr >= (uint8_t *)esp - 32 /* The size of PUSHA. */
-      && (uint8_t *)stack_bottom >= (uint8_t *)PHYS_BASE - STACK_SIZE_MAX)
+  if ((uint8_t *)fault_addr >= (uint8_t *)esp - 32 /* The size of PUSHA. */
+      && (uint8_t *)stack_bottom >= (uint8_t *)PHYS_BASE - STACK_SIZE_MAX
+      && is_user_vaddr (fault_addr) && get_page (fault_addr, t) == NULL)
     {
+      /* Stack growth. */
       if (!page_full_load_stack (stack_bottom))
         process_exit (-1);
       return;
