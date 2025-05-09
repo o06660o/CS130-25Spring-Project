@@ -6,6 +6,8 @@
 #include "vm/swap.h"
 #include <hash.h>
 
+#define STACK_SIZE_MAX 0x800000 /* Maximum user stack size. */
+
 /* Types of a page, see comments of PAGE for more detail. */
 enum page_type
 {
@@ -47,6 +49,7 @@ bool page_lazy_load_anon (struct file *file, off_t ofs, void *upage,
                           bool writable);
 bool page_lazy_load_file (void);
 bool page_full_load (void *fault_addr);
+bool page_full_load_stack (void *upage);
 void page_free (struct page *);
 
 #endif /* vm/page.h */

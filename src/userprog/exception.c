@@ -153,6 +153,28 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+#ifdef VM
+  struct thread *t = thread_current ();
+  void *esp;
+  if (user)
+    {
+      esp = f->esp;
+      t->user_esp = esp;
+    }
+  else
+    esp = t->user_esp;
+
+  if ((uint8_t *)fault_addr >= (uint8_t *)esp - 32
+      && PHYS_BASE - pg_round_down (fault_addr) <= STACK_SIZE_MAX)
+    {
+      /* Stack growth. */
+      void *stack_bottom = pg_round_down (fault_addr);
+      if (!page_full_load_stack (stack_bottom))
+        process_exit (-1);
+      return;
+    }
+#endif
+
   /* The kernel thread is trying to access the invalid address passed
      by the user program, which implies that we are handling a system call. */
   if (!user && is_user_vaddr (fault_addr))

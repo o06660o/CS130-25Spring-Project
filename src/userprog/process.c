@@ -496,9 +496,11 @@ done:
   return success;
 }
 
+#ifndef VM
 /* load() helpers. */
 
 static bool install_page (void *upage, void *kpage, bool writable);
+#endif
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -617,16 +619,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp)
 {
-  uint8_t *kpage;
   bool success = false;
 
 #ifdef VM
-  /* If we implemented demand paging, it's dangerous to directly
-     allocate a page from the user pool. */
-  kpage = palloc_get_page (PAL_ZERO);
+  success = page_full_load_stack (((uint8_t *)PHYS_BASE) - PGSIZE);
+  if (success)
+    {
+      *esp = PHYS_BASE;
+      thread_current ()->user_esp = PHYS_BASE;
+    }
 #else
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-#endif
+  uint8_t *kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL)
     {
       success = install_page (((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true);
@@ -635,9 +638,11 @@ setup_stack (void **esp)
       else
         palloc_free_page (kpage);
     }
+#endif
   return success;
 }
 
+#ifndef VM
 /* Adds a mapping from user virtual address UPAGE to kernel
    virtual address KPAGE to the page table.
    If WRITABLE is true, the user process may modify the page;
@@ -652,6 +657,7 @@ install_page (void *upage, void *kpage, bool writable)
 {
   return pagedir_install_page (thread_current (), upage, kpage, writable);
 }
+#endif
 
 /* Find the exit data by TID. */
 struct exit_data *

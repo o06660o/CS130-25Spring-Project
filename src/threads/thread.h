@@ -140,6 +140,7 @@ struct thread
 #endif
 #ifdef VM
   struct list page_list; /* Pages a user process owns. */
+  void *user_esp; /* Stores esp on the transition from user to kernel mode */
 #endif
 
   /* Owned by thread.c. */

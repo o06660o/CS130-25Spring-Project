@@ -186,6 +186,53 @@ page_free (struct page *page)
   free (page);
 }
 
+/* Fully loads a stack page and inserts it into the page directory.
+   It will be initialized as an anonymous page and zeroed. */
+bool
+page_full_load_stack (void *upage)
+{
+  struct page *page = malloc (sizeof (struct page));
+  void *kpage = NULL;
+  if (page == NULL)
+    return false;
+
+  ASSERT (pg_round_down (upage) == upage);
+
+  lock_acquire (&sup_page_table_lock);
+  page->type = PAGE_ALLOC;
+  page->kpage = NULL;
+  page->slot_idx = SLOT_ERR;
+
+  page->file = NULL;
+  page->ofs = 0;
+  page->upage = upage;
+  page->read_bytes = 0;
+  page->zero_bytes = PGSIZE;
+  page->writable = true;
+
+  page->owner = thread_current ();
+  hash_insert (&sup_page_table, &page->hashelem);
+  list_push_back (&page->owner->page_list, &page->listelem);
+  lock_release (&sup_page_table_lock);
+
+  kpage = frame_alloc (PAL_USER | PAL_ZERO, upage, page, true);
+  if (kpage == NULL)
+    goto fail;
+
+  if (!pagedir_install_page (page->owner, page->upage, kpage, page->writable))
+    goto fail;
+  ASSERT (pagedir_get_page (page->owner->pagedir, page->upage) == kpage);
+
+  page->kpage = kpage;
+  frame_set_pinned (kpage, false);
+  return true;
+fail:
+  free (page);
+  if (kpage != NULL)
+    frame_free (kpage);
+  return false;
+}
+
 static unsigned
 hash_func (const struct hash_elem *elem, void *aux UNUSED)
 {

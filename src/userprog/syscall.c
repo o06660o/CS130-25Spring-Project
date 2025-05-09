@@ -98,6 +98,8 @@ is_valid_buf (const void *ptr, size_t size)
 static void
 syscall_handler (struct intr_frame *f)
 {
+  thread_current ()->user_esp = f->esp;
+
   size_t delta = 0;
   int syscall_num = READ (f->esp, delta, int);
 #ifdef DEBUG
