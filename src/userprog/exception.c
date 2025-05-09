@@ -154,21 +154,18 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
 #ifdef VM
+  /* Get correct stack pointer address. */
   struct thread *t = thread_current ();
-  void *esp;
+  void *esp = user ? f->esp : t->user_esp;
   if (user)
-    {
-      esp = f->esp;
-      t->user_esp = esp;
-    }
-  else
-    esp = t->user_esp;
+    t->user_esp = f->esp;
 
-  if ((uint8_t *)fault_addr >= (uint8_t *)esp - 32
-      && PHYS_BASE - pg_round_down (fault_addr) <= STACK_SIZE_MAX)
+  /* Sorry for the messy code here. */
+  void *stack_bottom = pg_round_down (fault_addr);
+  if (get_page (fault_addr, t) == NULL && is_user_vaddr (fault_addr)
+      && (uint8_t *)fault_addr >= (uint8_t *)esp - 32 /* The size of PUSHA. */
+      && (uint8_t *)stack_bottom >= (uint8_t *)PHYS_BASE - STACK_SIZE_MAX)
     {
-      /* Stack growth. */
-      void *stack_bottom = pg_round_down (fault_addr);
       if (!page_full_load_stack (stack_bottom))
         process_exit (-1);
       return;

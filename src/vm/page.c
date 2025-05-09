@@ -21,7 +21,6 @@ static struct lock sup_page_table_lock;
 static unsigned hash_func (const struct hash_elem *, void *UNUSED);
 static bool hash_less (const struct hash_elem *, const struct hash_elem *,
                        void *UNUSED);
-static struct page *get_page (const void *fault_addr, const struct thread *t);
 
 void
 page_init (void)
@@ -71,7 +70,7 @@ page_lazy_load_file (void)
 }
 
 /* Converts a fault address to a page. */
-static struct page *
+struct page *
 get_page (const void *fault_addr, const struct thread *t)
 {
   struct page tmp;

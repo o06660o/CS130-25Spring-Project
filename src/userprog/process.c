@@ -622,7 +622,7 @@ setup_stack (void **esp)
   bool success = false;
 
 #ifdef VM
-  success = page_full_load_stack (((uint8_t *)PHYS_BASE) - PGSIZE);
+  success = page_full_load_stack ((uint8_t *)PHYS_BASE - PGSIZE);
   if (success)
     {
       *esp = PHYS_BASE;

@@ -51,5 +51,6 @@ bool page_lazy_load_file (void);
 bool page_full_load (void *fault_addr);
 bool page_full_load_stack (void *upage);
 void page_free (struct page *);
+struct page *get_page (const void *fault_addr, const struct thread *t);
 
 #endif /* vm/page.h */
