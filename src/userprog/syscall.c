@@ -443,7 +443,8 @@ mmap_ (int fd, void *addr)
   /* Invalid input. */
   if (addr == NULL || pg_ofs (addr) != 0)
     return -1;
-  if (fd < 0 || fd == STDIN_FILENO || fd == STDOUT_FILENO)
+  if (fd < 0 || fd >= OPEN_FILE_MAX || fd == STDIN_FILENO
+      || fd == STDOUT_FILENO)
     return -1;
   if (fd_owner[fd] != cur->tid || fd_entry[fd] == NULL)
     return -1;
