@@ -151,6 +151,7 @@ page_free (struct page *page)
     {
       if (page->kpage != NULL)
         {
+          frame_set_pinned (page->kpage, true);
           frame_free (page->kpage);
           page->kpage = NULL;
           pagedir_set_accessed (page->owner->pagedir, page->upage, false);
