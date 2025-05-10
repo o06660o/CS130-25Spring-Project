@@ -92,6 +92,32 @@ page_full_load (void *fault_addr)
     {
       ASSERT (page->kpage == NULL);
       ASSERT (page->slot_idx == SLOT_ERR);
+
+      /* Try to find a existing frame to share. */
+      if (page->type == PAGE_UNALLOC && page->file != NULL
+          && (page->read_bytes == PGSIZE || page->writable == false))
+        {
+          struct hash_iterator it;
+          hash_first (&it, &sup_page_table);
+          while (hash_next (&it))
+            {
+              struct page *cur
+                  = hash_entry (hash_cur (&it), struct page, hashelem);
+              if (page->file == cur->file && page->ofs == cur->ofs
+                  && cur->type == PAGE_ALLOC
+                  && (cur->read_bytes == PGSIZE || cur->writable == false))
+                {
+                  ASSERT (cur->kpage != NULL);
+                  ASSERT (cur->slot_idx == SLOT_ERR);
+
+                  frame_share (cur->kpage, page->upage, page);
+                  page->kpage = cur->kpage;
+                  page->type = PAGE_ALLOC;
+                  return true;
+                }
+            }
+        }
+
       kpage = frame_alloc (PAL_USER, page->upage, page, true);
       if (kpage == NULL)
         goto fail;
@@ -147,12 +173,15 @@ page_free (struct page *page)
 {
   if (page == NULL)
     return;
+
+  if (page->kpage != NULL)
+    frame_set_pinned (page->kpage, true);
+
   if (page->type == PAGE_ALLOC || page->type == PAGE_FILE)
     {
       if (page->kpage != NULL)
         {
-          frame_set_pinned (page->kpage, true);
-          frame_free (page->kpage);
+          frame_remove (page);
           page->kpage = NULL;
           pagedir_set_accessed (page->owner->pagedir, page->upage, false);
           pagedir_set_dirty (page->owner->pagedir, page->upage, false);

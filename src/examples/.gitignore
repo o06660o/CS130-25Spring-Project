@@ -17,6 +17,7 @@ lineup
 matmult
 recursor
 test*
+!test*.c
 *.d
 *.o
 *.a

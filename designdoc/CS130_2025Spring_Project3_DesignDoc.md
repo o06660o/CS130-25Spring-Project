@@ -43,15 +43,21 @@ struct thread
 #### New Struct to `vm/frame.h`
 
 ```c
+struct frame_owner
+{
+  void *upage;               /* Address returned to user. */
+  struct thread *thread;     /* Owner thread of this frame. */
+  struct page *sup_page;     /* The corresponding supplemental page. */
+  struct list_elem listelem; /* The list element in owner_list. */
+};
+
 struct frame
 {
   void *kpage;               /* Address returned by palloc. */
-  void *upage;               /* Address returned to user. */
-  struct thread *owner;      /* Owner thread of this frame. */
   bool pinned;               /* Whether this frame can be evicted. */
   struct hash_elem hashelem; /* The hash element in frame_hash. */
   struct list_elem listelem; /* The list element in frame_list. */
-  struct page *sup_page;     /* The corresponding supplemental page. */
+  struct list owner_list;    /* List of owners of this frame. */
 };
 ```
 

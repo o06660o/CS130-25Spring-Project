@@ -36,7 +36,7 @@ frame_init (void)
 }
 
 /* Allocates a frame from user pool, returns its kernel virtual address.
-   PAL_USER is automatically set.*/
+   PAL_USER is automatically set. */
 void *
 frame_alloc (enum palloc_flags flags, void *upage, struct page *page,
              bool pinned)
@@ -54,15 +54,41 @@ frame_alloc (enum palloc_flags flags, void *upage, struct page *page,
   if (kpage == NULL)
     PANIC ("Cannot evict a frame");
   struct frame *frame = (struct frame *)malloc (sizeof (struct frame));
+  struct frame_owner *owner
+      = (struct frame_owner *)malloc (sizeof (struct frame_owner));
   frame->kpage = kpage;
-  frame->upage = upage;
-  frame->owner = thread_current ();
   frame->pinned = pinned;
-  frame->sup_page = page;
+  list_init (&frame->owner_list);
+  owner->upage = upage;
+  owner->thread = thread_current ();
+  owner->sup_page = page;
+  list_push_back (&frame->owner_list, &owner->listelem);
   hash_insert (&frame_hash, &frame->hashelem);
   list_insert (clock_ptr, &frame->listelem);
   lock_release (&frame_lock);
   return kpage;
+}
+
+/* Share the frame at KPAGE with page PAGE. */
+void
+frame_share (void *kpage, void *upage, struct page *page)
+{
+  ASSERT (pg_ofs (upage) == 0);
+  ASSERT (is_user_vaddr (upage));
+
+  lock_acquire (&frame_lock);
+  struct frame tmp;
+  tmp.kpage = kpage;
+  struct hash_elem *elem = hash_find (&frame_hash, &tmp.hashelem);
+  ASSERT (elem != NULL);
+  struct frame *frame = hash_entry (elem, struct frame, hashelem);
+  struct frame_owner *owner
+      = (struct frame_owner *)malloc (sizeof (struct frame_owner));
+  owner->upage = upage;
+  owner->thread = thread_current ();
+  owner->sup_page = page;
+  list_push_back (&frame->owner_list, &owner->listelem);
+  lock_release (&frame_lock);
 }
 
 /* Free a frame at KPAGE. If KPAGE doesn't exist, do nothing. */
@@ -88,6 +114,9 @@ frame_free (void *kpage)
   struct frame *frame = hash_entry (elem, struct frame, hashelem);
   if (clock_ptr == &frame->listelem)
     clock_ptr = next_frame_ ();
+
+  ASSERT (list_empty (&frame->owner_list));
+
   palloc_free_page (frame->kpage);
   list_remove (&frame->listelem);
   free (frame);
@@ -145,11 +174,24 @@ frame_evict (void)
 
       if (f->pinned)
         continue;
-      if (pagedir_is_accessed (f->owner->pagedir, f->upage))
+
+      struct list_elem *st = list_begin (&f->owner_list);
+      struct list_elem *ed = list_end (&f->owner_list);
+      bool is_accessed = false;
+      for (struct list_elem *it = st; it != ed; it = list_next (it))
         {
-          pagedir_set_accessed (f->owner->pagedir, f->upage, false);
-          continue;
+          struct frame_owner *owner
+              = list_entry (it, struct frame_owner, listelem);
+          if (pagedir_is_accessed (owner->thread->pagedir, owner->upage))
+            {
+              pagedir_set_accessed (owner->thread->pagedir, owner->upage,
+                                    false);
+              is_accessed = true;
+            }
         }
+      if (is_accessed)
+        continue;
+
       victim = f;
       break;
     }
@@ -158,38 +200,49 @@ frame_evict (void)
 
   /* Pages modified since load should be written to swap; while unmodified
      pages should never be written to swap. */
-  ASSERT (victim->upage == victim->sup_page->upage);
-  if (victim->sup_page->type == PAGE_ALLOC)
+  struct frame_owner *victim_owner = list_entry (
+      list_begin (&victim->owner_list), struct frame_owner, listelem);
+  ASSERT (victim_owner->upage == victim_owner->sup_page->upage);
+  if (victim_owner->sup_page->type == PAGE_ALLOC)
     {
-      if (pagedir_is_dirty (victim->owner->pagedir, victim->upage))
+      if (pagedir_is_dirty (victim_owner->thread->pagedir,
+                            victim_owner->upage))
         {
           /* According to pintos document, we can panic if the swap is full. */
           slot_id slot_idx = swap_out (victim->kpage);
           if (slot_idx == SLOT_ERR)
             PANIC ("swap is full");
-          victim->sup_page->slot_idx = slot_idx;
+          victim_owner->sup_page->slot_idx = slot_idx;
         }
       else
         {
-          victim->sup_page->type = PAGE_UNALLOC;
-          victim->sup_page->slot_idx = SLOT_ERR;
+          struct list_elem *st = list_begin (&victim->owner_list);
+          struct list_elem *ed = list_end (&victim->owner_list);
+          for (struct list_elem *it = st; it != ed; it = list_next (it))
+            {
+              struct frame_owner *owner
+                  = list_entry (it, struct frame_owner, listelem);
+              owner->sup_page->type = PAGE_UNALLOC;
+              owner->sup_page->slot_idx = SLOT_ERR;
+            }
         }
     }
   else
     {
-      ASSERT (victim->sup_page->type == PAGE_FILE);
-      if (pagedir_is_dirty (victim->owner->pagedir, victim->upage))
+      ASSERT (victim_owner->sup_page->type == PAGE_FILE);
+      if (pagedir_is_dirty (victim_owner->thread->pagedir,
+                            victim_owner->upage))
         {
           if (lock_held_by_current_thread (&filesys_lock))
-            file_write_at (victim->sup_page->file, victim->kpage,
-                           victim->sup_page->read_bytes,
-                           victim->sup_page->ofs);
+            file_write_at (victim_owner->sup_page->file, victim->kpage,
+                           victim_owner->sup_page->read_bytes,
+                           victim_owner->sup_page->ofs);
           else if (lock_try_acquire (&filesys_lock))
             {
               ASSERT (lock_held_by_current_thread (&filesys_lock))
-              file_write_at (victim->sup_page->file, victim->kpage,
-                             victim->sup_page->read_bytes,
-                             victim->sup_page->ofs);
+              file_write_at (victim_owner->sup_page->file, victim->kpage,
+                             victim_owner->sup_page->read_bytes,
+                             victim_owner->sup_page->ofs);
               lock_release (&filesys_lock);
             }
           else
@@ -200,24 +253,64 @@ frame_evict (void)
               frame_set_pinned (victim->kpage, true);
               lock_release (&frame_lock);
               lock_acquire (&filesys_lock);
-              file_write_at (victim->sup_page->file, victim->kpage,
-                             victim->sup_page->read_bytes,
-                             victim->sup_page->ofs);
-              lock_release (&filesys_lock);
               lock_acquire (&frame_lock);
+              file_write_at (victim_owner->sup_page->file, victim->kpage,
+                             victim_owner->sup_page->read_bytes,
+                             victim_owner->sup_page->ofs);
+              lock_release (&filesys_lock);
               frame_set_pinned (victim->kpage, false);
             }
-          pagedir_set_dirty (victim->owner->pagedir, victim->upage, false);
+          pagedir_set_dirty (victim_owner->thread->pagedir,
+                             victim_owner->upage, false);
         }
     }
 
   /* Unbound the page from the frame. */
-  pagedir_clear_page (victim->owner->pagedir, victim->upage);
-  victim->sup_page->kpage = NULL;
-  victim->sup_page = NULL;
-
+  struct list_elem *st = list_begin (&victim->owner_list);
+  struct list_elem *ed = list_end (&victim->owner_list);
+  for (struct list_elem *it = st; it != ed;)
+    {
+      struct frame_owner *owner
+          = list_entry (it, struct frame_owner, listelem);
+      it = list_next (it);
+      pagedir_clear_page (owner->thread->pagedir, victim_owner->upage);
+      owner->sup_page->kpage = NULL;
+      list_remove (&owner->listelem);
+      free (owner);
+    }
   /* Free the frame. */
   frame_free (victim->kpage);
+}
+
+/* Removes the share of page PAGE to frame. If this is the last share, free the
+   frame. */
+void
+frame_remove (struct page *page)
+{
+  lock_acquire (&frame_lock);
+  struct frame tmp;
+  tmp.kpage = page->kpage;
+  struct hash_elem *elem = hash_find (&frame_hash, &tmp.hashelem);
+  ASSERT (elem != NULL);
+  struct frame *frame = hash_entry (elem, struct frame, hashelem);
+  struct list_elem *st = list_begin (&frame->owner_list);
+  struct list_elem *ed = list_end (&frame->owner_list);
+  for (struct list_elem *it = st; it != ed;)
+    {
+      struct frame_owner *owner
+          = list_entry (it, struct frame_owner, listelem);
+      if (owner->sup_page == page)
+        {
+          it = list_remove (it);
+          free (owner);
+          break;
+        }
+      else
+        it = list_next (it);
+    }
+  if (list_empty (&frame->owner_list))
+    frame_free (frame->kpage);
+  lock_release (&frame_lock);
 }
 
 static unsigned
