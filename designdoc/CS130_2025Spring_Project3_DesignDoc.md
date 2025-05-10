@@ -180,7 +180,12 @@ None.
 
 > **B2:** When a frame is required but none is free, some frame must be evicted. Describe your code for choosing a frame to evict.
 
-<!-- TODO -->
+We implement the clock algorithm by maintaining a circular linked list of
+all frames and a clock pointer. When selecting a victim, we examine the
+frame pointed to by the clock pointer: if its accessed bit is 1, we clear
+the bit and advance the pointer to the next frame; if its accessed bit is 0,
+we choose that frame as the victim. In this way, we approximate LRU performance
+at low overhead.
 
 > **B3:** When a process P obtains a frame that was previously used by a process Q, how do you adjust the page table (and any other data structures) to reflect the frame Q no longer has?
 
