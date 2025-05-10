@@ -139,21 +139,32 @@ static struct lock swap_lock;
 
 > **A2:** In a few paragraphs, describe your code for accessing the data stored in the SPT about a given page.
 
-*Your answer here.*
+We use a hash table to lookup the data we need. To uniquely determine that page,
+we need a virtual address and its owner thread.
+
+This instruction has been encapsulated into a function `get_page()`, which
+first executes `page_round_down()` to normalize the address, then acquires
+the lock, and finally quires the hash table.
 
 > **A3:** How does your code coordinate accessed and dirty bits between kernel and user virtual addresses that alias a single frame, or alternatively how do you avoid the issue?
 
-*Your answer here.*
+We mainly use user virtual address to avoid confusion.
 
 ### Synchronization
 
 > **A4:** When two user processes both need a new frame at the same time, how are races avoided?
 
+The frame table is protected by `frame_lock`, which makes inserting or
+deleting atomic.
+
 ### Rationale
 
 > **A5:** Why did you choose the data structure(s) that you did for representing virtual-to-physical mappings?
 
-*Your answer here.*
+We chose a hash table for the supplemental page table because it has advantage
+in time complexity over list.
+
+The frame list paired with a clock pointer is used for the eviction algorithm.
 
 ---
 
@@ -169,39 +180,61 @@ None.
 
 > **B2:** When a frame is required but none is free, some frame must be evicted. Describe your code for choosing a frame to evict.
 
-*Your answer here.*
+<!-- TODO -->
 
 > **B3:** When a process P obtains a frame that was previously used by a process Q, how do you adjust the page table (and any other data structures) to reflect the frame Q no longer has?
 
-*Your answer here.*
+The old frame is freed, and it will be unbounded from its corresponding
+supplemental page. Then a new frame will be allocated with a different
+owner and be bounded to P's supplemental page.
+
+The two frames have different owner, so they won't be considered the same.
 
 > **B4:** Explain your heuristic for deciding whether a page fault for an invalid virtual address should cause the stack to be extended into the page that faulted.
 
-*Your answer here.*
+If the fault address lies within 8 MB below the top of the stack, no more than
+32 bytes below the user stack pointer, and is not bounded to any pages.
+Then we decides to grow the user stack.
 
 ### Synchronization
 
 > **B5:** Explain the basics of your VM synchronization design. In particular, explain how it prevents deadlock. (Refer to the textbook for an explanation of the necessary conditions for deadlock.)
 
-*Your answer here.*
+- To protect a frame across system calls, we raise a `pinned` flag on the
+  frame rather than holding a lock, which breaks the "hold-and-wait" condition
+  for a deadlock.
+- If necessary, use static locks instead of global locks. However,
+  `filesys_lock` is global because filesystem instructions naturally span
+  multiple modules. We consider it safer to limit the scope of locks.
 
 > **B6:** A page fault in process P can cause another process Q's frame to be evicted. How do you ensure that Q cannot access or modify the page during the eviction process? How do you avoid a race between P evicting Q's frame and Q faulting the page back in?
 
-*Your answer here.*
+We use the `frame_lock` to ensure the evict instruction atomic.
 
 > **B7:** Suppose a page fault in process P causes a page to be read from the file system or swap. How do you ensure that a second process Q cannot interfere by, for example, attempting to evict the frame while it is still being read in?
 
-*Your answer here.*
+When a page is still being read from the file system or swap, it's frame is set
+to be "pinned". It won't be evicted until reading is finished.
 
 > **B8:** Explain how you handle access to paged-out pages that occur during system calls. Do you use page faults to bring in pages (as in user programs), or do you have a mechanism for "locking" frames into physical memory, or do you use some other design? How do you gracefully handle attempted accesses to invalid virtual addresses?
 
-*Your answer here.*
+We always try to full load the the page. If it fails, it means that the address
+is invalid, then it's time to terminate the process.
 
 ### Rationale
 
 > **B9:** A single lock for the whole VM system would make synchronization easy but limit parallelism. On the other hand, using many locks complicates synchronization and raises the possibility for deadlock. Explain where your design falls along this continuum and why you chose to design it this way.
 
-*Your answer here.*
+A single, global VM lock would be easy to implement but would serialize all
+instructions, severely limiting concurrency. At the opposite extreme, if we
+protect every data structure or even each page with its own lock, the code
+might be too complicated to understand.
+
+Our design split the VM system into 3 subsystems, each has its own lock:
+`frame_lock`, `sup_page_table_lock` and  `swap_lock`. In fact, we think the
+synchronization problem in VM system can be classified by the readers-
+writers problem, and conditional variables can also be a solution.
+But locks seems to be a more natural method to control synchronization.
 
 ---
 
@@ -243,17 +276,23 @@ struct mmap_data
 
 > **C2:** Describe how memory mapped files integrate into your virtual memory subsystem. Explain how the page fault and eviction processes differ between swap pages and other pages.
 
-*Your answer here.*
+The memory mapped data can use the supplemental page table to lazy allocate
+memory. The difference is that the frame needs to be written back to the file
+system if evicted.
 
 > **C3:** Explain how you determine whether a new file mapping overlaps any existing segment.
 
-*Your answer here.*
+A file may use memory in `[addr, addr + file_len)` (page-aligned), we iterate
+through this range, check wether a page has already used this address.
 
 ### Rationale
 
 > **C4:** Mappings created with `mmap` have similar semantics to those of data demand-paged from executables, except that `mmap` mappings are written back to their original files, not to swap. This implies that much of their implementation can be shared. Explain why your implementation either does or does not share much of the code for the two situations.
 
-*Your answer here.*
+Most of their implementation are shared, such as `page_lazy_load()`,
+`page_full_load()`, `page_free()`. Hoever, it's true that a page from
+`load_segment()` and `mmap()` differs, and we use `enum page_type` to
+identify them.
 
 ---
 
@@ -261,4 +300,4 @@ struct mmap_data
 
 > Do you have any suggestions for the TAs to more effectively assist students, either for future quarters or the remaining projects? Any other comments?
 
-*Your answer here.*
+None.
