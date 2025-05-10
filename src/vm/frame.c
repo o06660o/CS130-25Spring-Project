@@ -10,12 +10,11 @@
 #include <debug.h>
 #include <stdint.h>
 
-/* frame table. */
-
-static struct hash frame_hash;
-static struct list frame_list;
-static struct list_elem *clock_ptr;
-static struct lock frame_lock;
+/* Frame table. */
+static struct lock frame_lock;      /* A lock to protect frame table. */
+static struct hash frame_hash;      /* A hash table to store frames. */
+static struct list frame_list;      /* A list to evict frames. */
+static struct list_elem *clock_ptr; /* Still used to evict frames. */
 
 /* Try to find a frame to evict */
 static void frame_evict (void);

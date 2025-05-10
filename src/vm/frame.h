@@ -8,13 +8,13 @@
 
 struct frame
 {
-  void *kpage;
-  void *upage;
-  struct thread *owner;
-  bool pinned;
-  struct hash_elem hashelem;
-  struct list_elem listelem;
-  struct page *sup_page;
+  void *kpage;               /* Address returned by palloc. */
+  void *upage;               /* Address returned to user. */
+  struct thread *owner;      /* Owner thread of this frame. */
+  bool pinned;               /* Whether this frame can be evicted. */
+  struct hash_elem hashelem; /* The hash element in frame_hash. */
+  struct list_elem listelem; /* The list element in frame_list. */
+  struct page *sup_page;     /* The corresponding supplemental page. */
 };
 
 void frame_init (void);

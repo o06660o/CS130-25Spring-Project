@@ -9,11 +9,11 @@
 
 struct mmap_data
 {
-  mapid_t mapping;
-  struct file *file;
-  struct hash_elem hashelem;
-  tid_t owner;
-  void *uaddr;
+  mapid_t mapping;           /* Unique identifier within a process */
+  struct file *file;         /* File mapped to this memory segment. */
+  struct hash_elem hashelem; /* The hash element in mmap_table. */
+  tid_t owner;               /* Owner process of this mapping. */
+  void *uaddr;               /* Begin of mapped memory address. */
 };
 
 void syscall_init (void);
