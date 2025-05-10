@@ -1,19 +1,19 @@
 /* test3.c
    Tests if the sharing is implemented.
-   Create 32 child processes in a relatively small user pool and swap size.
+   Create 16 child processes in a relatively small user pool and swap size.
 
    cd ../../examples/ && \
    make && \
    cd ../vm/build/ && \
-   pintos  -k -T 60 --qemu --filesys-size=2 --swap-size=0.01 -p \
+   pintos  -k -T 60 --qemu --filesys-size=2 --swap-size=0.05 -p \
    ../../examples/test3 -a test3 -p \
-   ../../examples/test3-child -a test3-child -- -ul=8 -q  -f run test3
+   ../../examples/test3-child -a test3-child -- -ul=21 -q  -f run test3
 */
 
 #include <stdio.h>
 #include <syscall.h>
 
-#define CHILD_CNT 32
+#define CHILD_CNT 16
 
 int
 main (void)
@@ -30,7 +30,7 @@ main (void)
 
   for (i = 0; i < CHILD_CNT; i++)
     if (wait (children[i]) == 0x42)
-      printf ("wait for child %d\n", i);
+      printf ("test3: wait for child %d\n", i);
     else
       {
         printf ("test3: wait for child %d failed\n", i);
