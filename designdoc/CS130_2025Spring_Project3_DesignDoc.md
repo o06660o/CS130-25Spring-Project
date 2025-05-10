@@ -80,7 +80,7 @@ enum page_type
 
    A page can be one of difference types:
    - UNALLOC: unallocated anonymous page. it will be allocated when accessed.
-   - ANON: allocated anonymous page. it is not backed by any file. it might be
+   - ALLOC: allocated anonymous page. it is not backed by any file. it might be
      in the swap slot if evicted.
    - FILE: file backed page. it might be in the filesys if evicted or unloaded.
  */
