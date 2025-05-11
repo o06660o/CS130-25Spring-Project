@@ -7,9 +7,8 @@
 
 #define BUSY 500000000 /* 5e8 */
 #define SIZE 1572864   /* 1.5MB */
-// #define SIZE (1024 * 1024)
 
-__attribute__ ((section (".rodata"))) static const volatile uint8_t data[SIZE];
+__attribute__ ((section (".text"))) static const volatile uint8_t data[SIZE];
 
 int
 main (void)
