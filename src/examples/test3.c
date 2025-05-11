@@ -11,7 +11,7 @@
 cd ../../examples/ && \
 make && \
 cd ../vm/build/ && \
-pintos -k -T 60 --qemu --filesys-size=2 --swap-size=0.1 -p \
+pintos -k -T 60 --qemu --filesys-size=30 --swap-size=0.1 -p \
 ../../examples/test3 -a test3 -p \
 ../../examples/test3-child -a test3-child -- -q -f run test3
 */
@@ -19,16 +19,28 @@ pintos -k -T 60 --qemu --filesys-size=2 --swap-size=0.1 -p \
 #include <stdio.h>
 #include <syscall.h>
 
-#define MAX_CHILD 20
+#define CHILD_CNT 5
 
 int
 main (void)
 {
-  for (int i = 0; i < MAX_CHILD; i++)
-    if (exec ("test3-child") == -1)
+  pid_t children[CHILD_CNT];
+  int i;
+
+  printf ("test3: start\n");
+  for (i = 0; i < CHILD_CNT; i++)
+    if ((children[i] = exec ("test3-child")) == -1)
+      printf ("test3: exec test3-child %d failed\n", i);
+    else
+      printf ("test3: exec test3-child %d\n", i);
+
+  for (i = 0; i < CHILD_CNT; i++)
+    if (wait (children[i]) == 0x42)
+      printf ("test3: wait for child %d\n", i);
+    else
       {
-        printf ("test3: exec test3-child %d failed\n", i);
-        break;
+        printf ("test3: wait for child %d failed\n", i);
+        return EXIT_FAILURE;
       }
   return EXIT_SUCCESS;
 }

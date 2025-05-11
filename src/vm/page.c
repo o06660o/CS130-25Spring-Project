@@ -94,8 +94,9 @@ page_full_load (void *fault_addr)
       ASSERT (page->slot_idx == SLOT_ERR);
 
       /* Try to find a existing frame to share. */
+      lock_acquire (&sup_page_table_lock);
       if (page->type == PAGE_UNALLOC && page->file != NULL
-          && (page->read_bytes == PGSIZE || page->writable == false))
+          && page->writable == false)
         {
           struct hash_iterator it;
           hash_first (&it, &sup_page_table);
@@ -103,20 +104,21 @@ page_full_load (void *fault_addr)
             {
               struct page *cur
                   = hash_entry (hash_cur (&it), struct page, hashelem);
-              if (page->file == cur->file && page->ofs == cur->ofs
-                  && cur->type == PAGE_ALLOC
-                  && (cur->read_bytes == PGSIZE || cur->writable == false))
+              if (strcmp (page->owner->name, cur->owner->name) == 0
+                  && page->ofs == cur->ofs && cur->type == PAGE_ALLOC
+                  && cur->writable == false)
                 {
                   ASSERT (cur->kpage != NULL);
                   ASSERT (cur->slot_idx == SLOT_ERR);
 
                   frame_share (cur->kpage, page->upage, page);
-                  page->kpage = cur->kpage;
-                  page->type = PAGE_ALLOC;
-                  return true;
+                  kpage = cur->kpage;
+                  lock_release (&sup_page_table_lock);
+                  goto end;
                 }
             }
         }
+      lock_release (&sup_page_table_lock);
 
       kpage = frame_alloc (PAL_USER, page->upage, page, true);
       if (kpage == NULL)
@@ -149,6 +151,9 @@ page_full_load (void *fault_addr)
         goto fail;
     }
 
+end:
+  if (pg_ofs (page->upage) != 0)
+    printf ("page_full_load: page->upage is not page aligned\n");
   if (!pagedir_install_page (page->owner, page->upage, kpage, page->writable))
     goto fail;
   ASSERT (pagedir_get_page (page->owner->pagedir, page->upage) == kpage);
@@ -197,6 +202,10 @@ page_free (struct page *page)
           palloc_free_page (tmp);
         }
     }
+
+  if (page->kpage != NULL)
+    frame_set_pinned (page->kpage, false);
+
   if (page->type != PAGE_FILE)
     list_remove (&page->listelem);
   lock_acquire (&sup_page_table_lock);

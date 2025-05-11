@@ -88,6 +88,21 @@ frame_share (void *kpage, void *upage, struct page *page)
   owner->thread = thread_current ();
   owner->sup_page = page;
   list_push_back (&frame->owner_list, &owner->listelem);
+
+#ifdef DEBUG
+  printf ("frame_share: kpage = %p\n", kpage);
+  struct list_elem *st = list_begin (&frame->owner_list);
+  struct list_elem *ed = list_end (&frame->owner_list);
+  for (struct list_elem *it = st; it != ed; it = list_next (it))
+    {
+      struct frame_owner *owner
+          = list_entry (it, struct frame_owner, listelem);
+      printf ("frame_share: upage = %p, tid = %d\n", owner->upage,
+              owner->thread->tid);
+    }
+  printf ("\n");
+#endif
+
   lock_release (&frame_lock);
 }
 
@@ -273,7 +288,7 @@ frame_evict (void)
       struct frame_owner *owner
           = list_entry (it, struct frame_owner, listelem);
       it = list_next (it);
-      pagedir_clear_page (owner->thread->pagedir, victim_owner->upage);
+      pagedir_clear_page (owner->thread->pagedir, owner->upage);
       owner->sup_page->kpage = NULL;
       list_remove (&owner->listelem);
       free (owner);
