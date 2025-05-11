@@ -2,8 +2,11 @@
 
    Tests if the sharing is implemented.
 
-   Create 5 child processes using the same executable, which needs about 1.5MB
-   of read-only data.
+   Trying to create child processes using the same executable, which needs
+   about 20MB of read-only data. If sharing and demand paging is implemented
+   correctly, we are still able to complete the test. If only paging is
+   implemented, we are able to create at leat one child, but will run out
+   of memory soon.
 
 cd ../../examples/ && \
 make && \
@@ -16,28 +19,16 @@ pintos -k -T 60 --qemu --filesys-size=2 --swap-size=0.1 -p \
 #include <stdio.h>
 #include <syscall.h>
 
-#define CHILD_CNT 5
+#define MAX_CHILD 20
 
 int
 main (void)
 {
-  pid_t children[CHILD_CNT];
-  int i;
-
-  printf ("test3: start\n");
-  for (i = 0; i < CHILD_CNT; i++)
-    if ((children[i] = exec ("test3-child")) == -1)
-      printf ("test3: exec test3-child %d failed\n", i);
-    else
-      printf ("test3: exec test3-child %d\n", i);
-
-  for (i = 0; i < CHILD_CNT; i++)
-    if (wait (children[i]) == 0x42)
-      printf ("test3: wait for child %d\n", i);
-    else
+  for (int i = 0; i < MAX_CHILD; i++)
+    if (exec ("test3-child") == -1)
       {
-        printf ("test3: wait for child %d failed\n", i);
-        return EXIT_FAILURE;
+        printf ("test3: exec test3-child %d failed\n", i);
+        break;
       }
   return EXIT_SUCCESS;
 }

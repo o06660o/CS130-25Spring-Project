@@ -3,15 +3,15 @@
    Currently, this file tests the behavior when a parent process terminates
    before its child.
 
-   I made some changes to recursor.c. I creates 4 processes:
+   I made some changes to recursor.c and creates 4 processes:
    3 -> 2 -> 1 -> 1
-   and hopes their termination order to be:
+   hoping their termination order to be:
    0 -> 2 -> 1 -> 3
-   however, now it is:
+   however, under my implementation it is:
    2 -> 3 -> 0 -> 1
-*/
 
-/*
+   One possible usage:
+
 cd ../../examples/ && \
 make && \
 cd ../userprog/build/ && \

@@ -4,9 +4,8 @@
 
    Create a static array of 3MB, only read it instead of writing to it.
    The swap cannot be full if we run pintos with a relatively small swap size.
-*/
 
-/*
+   One possible usage:
 cd ../../examples/ && \
 make && \
 cd ../vm/build/ && \
