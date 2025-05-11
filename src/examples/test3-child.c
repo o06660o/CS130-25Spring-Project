@@ -1,8 +1,8 @@
 /* Child process for test3.
-   Creates a child process and busy waits for some time.
-*/
+   Creates a child process and busy waits for some time. */
 
 #include <stdint.h>
+#include <stdio.h>
 
 #define BUSY 50000000 /* 5e8 */
 #define SIZE 1572864  /* 1.5MB */
