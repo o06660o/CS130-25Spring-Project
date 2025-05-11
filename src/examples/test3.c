@@ -1,19 +1,22 @@
 /* test3.c
-   Tests if the sharing is implemented.
-   Create 16 child processes in a relatively small user pool and swap size.
 
-   cd ../../examples/ && \
-   make && \
-   cd ../vm/build/ && \
-   pintos  -k -T 60 --qemu --filesys-size=2 --swap-size=0.05 -p \
-   ../../examples/test3 -a test3 -p \
-   ../../examples/test3-child -a test3-child -- -ul=21 -q  -f run test3
+   Tests if the sharing is implemented.
+
+   Create 5 child processes using the same executable, which needs about 1.5MB
+   of read-only data.
+
+cd ../../examples/ && \
+make && \
+cd ../vm/build/ && \
+pintos -k -T 60 --qemu --filesys-size=2 --swap-size=0.1 -p \
+../../examples/test3 -a test3 -p \
+../../examples/test3-child -a test3-child -- -q -f run test3
 */
 
 #include <stdio.h>
 #include <syscall.h>
 
-#define CHILD_CNT 16
+#define CHILD_CNT 5
 
 int
 main (void)

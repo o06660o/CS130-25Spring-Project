@@ -1,4 +1,7 @@
 /* test2.c
+
+   Test whether unmodified pages are swapped out.
+
    Create a static array of 3MB, only read it instead of writing to it.
    The swap cannot be full if we run pintos with a relatively small swap size.
 */

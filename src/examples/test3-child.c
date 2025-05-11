@@ -5,18 +5,23 @@
 #include <stdint.h>
 #include <stdio.h>
 
-static const uint8_t const_data[65536] = {};
+#define BUSY 500000000 /* 5e8 */
+#define SIZE 1572864   /* 1.5MB */
+// #define SIZE (1024 * 1024)
+
+__attribute__ ((section (".rodata"))) static const volatile uint8_t data[SIZE];
 
 int
 main (void)
 {
-  for (int _ = 0; _ < 10; ++_)
-    for (int i = 0; i < 65536; ++i)
-      if (const_data[i] != 0)
-        {
-          printf ("test3-child: const_data[%d] = %d\n", i, const_data[i]);
-          return -1;
-        }
+  for (volatile int i = 0; i < BUSY; i++)
+    ;
+  for (volatile int i = 0; i < SIZE; i++)
+    if (data[i] != 0)
+      {
+        printf ("test3-child: const_data[%d] = %d\n", i, data[i]);
+        return -1;
+      }
 
   return 0x42;
 }
