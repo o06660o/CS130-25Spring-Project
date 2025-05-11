@@ -3,7 +3,7 @@
    Tests if the sharing is implemented.
 
    Trying to create child processes using the same executable, which needs
-   about 20MB of read-only data. If sharing and demand paging is implemented
+   about 20MB of read-only data. If sharing and demand paging are implemented
    correctly, we are still able to complete the test. If only paging is
    implemented, we are able to create at leat one child, but will run out
    of memory soon.
