@@ -22,6 +22,7 @@ static struct file *fd_entry[OPEN_FILE_MAX]; /* Maps fd to struct file *. */
 static tid_t fd_owner[OPEN_FILE_MAX];        /* thread tid owning each fd. */
 static struct lock fd_table_lock; /* Mutex protection for fd table access. */
 
+#ifdef VM
 /* Mmap file table. */
 static struct hash mmap_table;
 static struct lock mmap_table_lock; /* Mutex protection for mmap table. */
@@ -29,6 +30,7 @@ static unsigned hash_func (const struct hash_elem *, void *UNUSED);
 static bool hash_less (const struct hash_elem *, const struct hash_elem *,
                        void *UNUSED);
 static struct mmap_data *hash_query (mapid_t mapping, tid_t owner);
+#endif /* VM */
 
 /* Read data from the user stack, ESP won't be modified. */
 #define READ(esp, delta, type)                                                \
@@ -52,8 +54,10 @@ static int write_ (int fd, const void *buffer, unsigned size);
 static void seek_ (int fd, unsigned position);
 static unsigned tell_ (int fd);
 static void close_ (int fd);
+#ifdef VM
 static mapid_t mmap_ (int fd, void *addr);
 static void munmap_ (mapid_t mapping);
+#endif /* VM */
 
 void
 syscall_init (void)
@@ -66,8 +70,10 @@ syscall_init (void)
   for (int i = 0; i < OPEN_FILE_MAX; ++i)
     fd_owner[i] = TID_ERROR;
 
+#ifdef VM
   hash_init (&mmap_table, hash_func, hash_less, NULL);
   lock_init (&mmap_table_lock);
+#endif /* VM */
 }
 
 /* Reads data from the user stack. Only checks that the address is not
@@ -209,6 +215,7 @@ syscall_handler (struct intr_frame *f)
         close_ (fd);
         break;
       }
+#ifdef VM
     case SYS_MMAP: /* Memory map a file. */
       {
 
@@ -225,6 +232,7 @@ syscall_handler (struct intr_frame *f)
         munmap_ (mapping);
         break;
       }
+#endif /* VM */
 
     default: /* Unkown syscall. */
       exit_ (-1);
@@ -435,6 +443,7 @@ close_ (int fd)
   lock_release (&fd_table_lock);
 }
 
+#ifdef VM
 /* The mmap syscall. */
 static mapid_t
 mmap_ (int fd, void *addr)
@@ -565,3 +574,4 @@ hash_query (mapid_t mapping, tid_t owner)
   lock_release (&mmap_table_lock);
   return e != NULL ? hash_entry (e, struct mmap_data, hashelem) : NULL;
 }
+#endif /* VM */
