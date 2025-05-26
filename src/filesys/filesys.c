@@ -3,6 +3,7 @@
 #include "filesys/file.h"
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
+#include "threads/synch.h"
 #include <debug.h>
 #include <stdio.h>
 #include <string.h>
