@@ -428,3 +428,86 @@ cond_broadcast (struct condition *cond, struct lock *lock)
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
 }
+
+/* Initializes RWLOCK. A read-write lock allows multiple
+   threads to read a shared resource simultaneously, but only one
+   thread to write to it at a time. */
+void
+rwlock_init (struct rwlock *rwlock)
+{
+  ASSERT (rwlock != NULL);
+
+  rwlock->state = RWLOCK_READY;
+  lock_init (&rwlock->lock);
+  cond_init (&rwlock->readers);
+  cond_init (&rwlock->writers);
+  rwlock->holder_count = 0;
+}
+
+/* Acquires a read lock on RWLOCK, allowing multiple threads to
+   read simultaneously. If a write lock is held, this function
+   will block until the write lock is released.
+
+   This function may sleep, so it must not be called within an
+   interrupt handler. */
+void
+rwlock_acquire_reader (struct rwlock *rwlock)
+{
+  ASSERT (rwlock != NULL);
+  ASSERT (!intr_context ());
+  lock_acquire (&rwlock->lock);
+  while (rwlock->state == RWLOCK_WRITER)
+    cond_wait (&rwlock->readers, &rwlock->lock);
+  rwlock->state = RWLOCK_READER;
+  rwlock->holder_count++;
+  lock_release (&rwlock->lock);
+}
+
+/* Acquires a write lock on RWLOCK, allowing exclusive access to
+   the resource. If any read locks are held, this function will
+   block until all read locks are released.
+
+   This function may sleep, so it must not be called within an
+   interrupt handler. */
+void
+rwlock_acquire_writer (struct rwlock *rwlock)
+{
+  ASSERT (rwlock != NULL);
+  ASSERT (!intr_context ());
+  lock_acquire (&rwlock->lock);
+  while (rwlock->state != RWLOCK_READY)
+    cond_wait (&rwlock->writers, &rwlock->lock);
+  rwlock->state = RWLOCK_WRITER;
+  rwlock->holder_count++;
+  lock_release (&rwlock->lock);
+}
+
+/* Releases the read or write lock on RWLOCK. The lock must be
+   held by the current thread, but we do not check this condition. */
+void
+rwlock_release (struct rwlock *rwlock)
+{
+  ASSERT (rwlock != NULL);
+  ASSERT (rwlock->holder_count > 0);
+  lock_acquire (&rwlock->lock);
+  if (rwlock->state == RWLOCK_READER)
+    {
+      rwlock->holder_count--;
+      if (rwlock->holder_count == 0)
+        {
+          rwlock->state = RWLOCK_READY;
+          cond_signal (&rwlock->writers, &rwlock->lock);
+        }
+    }
+  else if (rwlock->state == RWLOCK_WRITER)
+    {
+      rwlock->state = RWLOCK_READY;
+      rwlock->holder_count--;
+      cond_signal (&rwlock->writers, &rwlock->lock);
+      cond_broadcast (&rwlock->readers, &rwlock->lock);
+    }
+  else
+    PANIC ("rwlock_release: rwlock is not in a valid state");
+
+  lock_release (&rwlock->lock);
+}

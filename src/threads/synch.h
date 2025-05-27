@@ -42,6 +42,28 @@ void cond_wait (struct condition *, struct lock *);
 void cond_signal (struct condition *, struct lock *);
 void cond_broadcast (struct condition *, struct lock *);
 
+enum rwlock_state
+{
+  RWLOCK_READER, /* Reader state. */
+  RWLOCK_WRITER, /* Writer state. */
+  RWLOCK_READY   /* Ready state, no readers or writers. */
+};
+
+/* A reader first read-write lock. */
+struct rwlock
+{
+  enum rwlock_state state;  /* Current state of the lock. */
+  struct lock lock;         /* Lock for the condition variable. */
+  struct condition readers; /* Condition variable for readers. */
+  struct condition writers; /* Condition variable for writers. */
+  unsigned holder_count;    /* Number of readers holding the lock. */
+};
+
+void rwlock_init (struct rwlock *);
+void rwlock_acquire_reader (struct rwlock *);
+void rwlock_acquire_writer (struct rwlock *);
+void rwlock_release (struct rwlock *);
+
 /* Optimization barrier.
 
    The compiler will not reorder operations across an
