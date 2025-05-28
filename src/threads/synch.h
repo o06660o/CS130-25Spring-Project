@@ -57,6 +57,7 @@ struct rwlock
   struct condition readers; /* Condition variable for readers. */
   struct condition writers; /* Condition variable for writers. */
   unsigned holder_count;    /* Number of readers holding the lock. */
+  struct thread *holder;    /* The writer holding the lock, if any. */
 };
 
 void rwlock_init (struct rwlock *);

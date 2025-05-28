@@ -11,9 +11,6 @@
 /* Partition that contains the file system. */
 struct block *fs_device;
 
-/* Prevent multiple threads to use filesystem at same time. */
-struct lock filesys_lock;
-
 static void do_format (void);
 
 /* Initializes the file system module.
@@ -32,8 +29,6 @@ filesys_init (bool format)
     do_format ();
 
   free_map_open ();
-
-  lock_init (&filesys_lock);
 }
 
 /* Shuts down the file system module, writing any unwritten data

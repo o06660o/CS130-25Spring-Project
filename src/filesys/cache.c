@@ -6,6 +6,7 @@
 
 #define CACHE_SIZE 64
 
+/* Cache a sector of disk storage. */
 struct cache_block
 {
   block_sector_t sector;           /* Sector number of the block. */

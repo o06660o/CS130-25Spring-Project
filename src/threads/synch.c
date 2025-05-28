@@ -442,6 +442,7 @@ rwlock_init (struct rwlock *rwlock)
   cond_init (&rwlock->readers);
   cond_init (&rwlock->writers);
   rwlock->holder_count = 0;
+  rwlock->holder = NULL;
 }
 
 /* Acquires a read lock on RWLOCK, allowing multiple threads to
@@ -457,7 +458,11 @@ rwlock_acquire_reader (struct rwlock *rwlock)
   ASSERT (!intr_context ());
   lock_acquire (&rwlock->lock);
   while (rwlock->state == RWLOCK_WRITER)
-    cond_wait (&rwlock->readers, &rwlock->lock);
+    {
+      /* Cannot downgrade write-lock to read-lock. */
+      ASSERT (rwlock->holder != thread_current ());
+      cond_wait (&rwlock->readers, &rwlock->lock);
+    }
   rwlock->state = RWLOCK_READER;
   rwlock->holder_count++;
   lock_release (&rwlock->lock);
@@ -476,9 +481,14 @@ rwlock_acquire_writer (struct rwlock *rwlock)
   ASSERT (!intr_context ());
   lock_acquire (&rwlock->lock);
   while (rwlock->state != RWLOCK_READY)
-    cond_wait (&rwlock->writers, &rwlock->lock);
+    {
+      /* Write-lock is not recursive. */
+      ASSERT (rwlock->holder != thread_current ());
+      cond_wait (&rwlock->writers, &rwlock->lock);
+    }
   rwlock->state = RWLOCK_WRITER;
   rwlock->holder_count++;
+  rwlock->holder = thread_current ();
   lock_release (&rwlock->lock);
 }
 
@@ -496,12 +506,14 @@ rwlock_release (struct rwlock *rwlock)
       if (rwlock->holder_count == 0)
         {
           rwlock->state = RWLOCK_READY;
+          rwlock->holder = NULL;
           cond_signal (&rwlock->writers, &rwlock->lock);
         }
     }
   else if (rwlock->state == RWLOCK_WRITER)
     {
       rwlock->state = RWLOCK_READY;
+      rwlock->holder = NULL;
       rwlock->holder_count--;
       cond_signal (&rwlock->writers, &rwlock->lock);
       cond_broadcast (&rwlock->readers, &rwlock->lock);

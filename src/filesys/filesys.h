@@ -2,7 +2,6 @@
 #define FILESYS_FILESYS_H
 
 #include "filesys/off_t.h"
-#include "threads/synch.h"
 #include <stdbool.h>
 
 /* Sectors of system file inodes. */
@@ -11,9 +10,6 @@
 
 /* Block device that contains the file system. */
 extern struct block *fs_device;
-
-/* Prevent multiple threads to use filesystem at same time. */
-extern struct lock filesys_lock;
 
 void filesys_init (bool format);
 void filesys_done (void);

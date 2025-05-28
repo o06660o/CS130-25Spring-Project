@@ -248,33 +248,9 @@ frame_evict (void)
       if (pagedir_is_dirty (victim_owner->thread->pagedir,
                             victim_owner->upage))
         {
-          if (lock_held_by_current_thread (&filesys_lock))
-            file_write_at (victim_owner->sup_page->file, victim->kpage,
-                           victim_owner->sup_page->read_bytes,
-                           victim_owner->sup_page->ofs);
-          else if (lock_try_acquire (&filesys_lock))
-            {
-              ASSERT (lock_held_by_current_thread (&filesys_lock))
-              file_write_at (victim_owner->sup_page->file, victim->kpage,
-                             victim_owner->sup_page->read_bytes,
-                             victim_owner->sup_page->ofs);
-              lock_release (&filesys_lock);
-            }
-          else
-            {
-              /* To avoid deadlock, we need to release frame_lock first.
-                 Before release the frame_lock, we need to ensure that
-                 victim frame won't be evicted again. */
-              frame_set_pinned (victim->kpage, true);
-              lock_release (&frame_lock);
-              lock_acquire (&filesys_lock);
-              lock_acquire (&frame_lock);
-              file_write_at (victim_owner->sup_page->file, victim->kpage,
-                             victim_owner->sup_page->read_bytes,
-                             victim_owner->sup_page->ofs);
-              lock_release (&filesys_lock);
-              frame_set_pinned (victim->kpage, false);
-            }
+          file_write_at (victim_owner->sup_page->file, victim->kpage,
+                         victim_owner->sup_page->read_bytes,
+                         victim_owner->sup_page->ofs);
           pagedir_set_dirty (victim_owner->thread->pagedir,
                              victim_owner->upage, false);
         }

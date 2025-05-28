@@ -126,13 +126,8 @@ page_full_load (void *fault_addr)
 
       if (page->read_bytes != 0)
         {
-          bool held_filesys_lock = lock_held_by_current_thread (&filesys_lock);
-          if (!held_filesys_lock)
-            lock_acquire (&filesys_lock);
           file_seek (page->file, page->ofs);
           off_t read = file_read (page->file, kpage, page->read_bytes);
-          if (!held_filesys_lock)
-            lock_release (&filesys_lock);
           if (read != (off_t)page->read_bytes)
             goto fail;
         }

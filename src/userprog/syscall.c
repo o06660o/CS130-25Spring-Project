@@ -276,11 +276,7 @@ create_ (const char *file, unsigned initial_size)
   if (!is_valid_str (file, NAME_MAX + 1))
     return false; /* File name too long. */
 
-  lock_acquire (&filesys_lock);
-  bool success = filesys_create (file, initial_size);
-  lock_release (&filesys_lock);
-
-  return success;
+  return filesys_create (file, initial_size);
 }
 
 /* The remove syscall. */
@@ -300,9 +296,7 @@ open_ (const char *file)
   if (!is_valid_str (file, NAME_MAX + 1))
     return -1; /* File name too long. */
 
-  lock_acquire (&filesys_lock);
   struct file *open_file = filesys_open (file);
-  lock_release (&filesys_lock);
   if (open_file == NULL)
     return -1;
 
@@ -311,9 +305,7 @@ open_ (const char *file)
   if (fd_alloc == BITMAP_ERROR)
     {
       lock_release (&fd_table_lock);
-      lock_acquire (&filesys_lock);
       file_close (open_file);
-      lock_release (&filesys_lock);
       return -1;
     }
   bitmap_set (fd_table, fd_alloc, true);
@@ -332,9 +324,7 @@ filesize_ (int fd)
   struct file *open_file = fd_entry[fd];
   if (open_file == NULL)
     return 0;
-  lock_acquire (&filesys_lock);
   int size = file_length (open_file);
-  lock_release (&filesys_lock);
   return size;
 }
 
@@ -362,9 +352,7 @@ read_ (int fd, void *buffer, unsigned size)
   struct file *open_file = fd_entry[fd];
   if (open_file == NULL)
     return -1;
-  lock_acquire (&filesys_lock);
   int ret = file_read (open_file, buffer, size);
-  lock_release (&filesys_lock);
   return ret;
 }
 
@@ -388,10 +376,7 @@ write_ (int fd, const void *buffer, unsigned size)
   struct file *open_file = fd_entry[fd];
   if (open_file == NULL)
     return -1;
-  lock_acquire (&filesys_lock);
-  int ret = file_write (open_file, buffer, size);
-  lock_release (&filesys_lock);
-  return ret;
+  return file_write (open_file, buffer, size);
 }
 
 /* The seek syscall. */
@@ -403,9 +388,7 @@ seek_ (int fd, unsigned position)
   struct file *open_file = fd_entry[fd];
   if (open_file == NULL)
     return;
-  lock_acquire (&filesys_lock);
   file_seek (open_file, position);
-  lock_release (&filesys_lock);
 }
 
 /* The tell syscall. */
@@ -417,10 +400,7 @@ tell_ (int fd)
   struct file *open_file = fd_entry[fd];
   if (open_file == NULL)
     return -1;
-  lock_acquire (&filesys_lock);
-  int ret = file_tell (open_file);
-  lock_release (&filesys_lock);
-  return ret;
+  return file_tell (open_file);
 }
 
 /* The close syscall. */
@@ -432,9 +412,7 @@ close_ (int fd)
   struct file *open_file = fd_entry[fd];
   if (open_file == NULL)
     return;
-  lock_acquire (&filesys_lock);
   file_close (open_file);
-  lock_release (&filesys_lock);
 
   lock_acquire (&fd_table_lock);
   bitmap_set (fd_table, fd, false);
@@ -459,10 +437,8 @@ mmap_ (int fd, void *addr)
     return -1;
 
   struct file *open_file = fd_entry[fd];
-  lock_acquire (&filesys_lock);
   struct file *file = file_reopen (open_file);
   off_t file_size = file_length (file);
-  lock_release (&filesys_lock);
 
   /* Still invalid input. */
   if (file_size == 0)
@@ -499,9 +475,7 @@ fail:
       page_free (page);
       i -= PGSIZE;
     }
-  lock_acquire (&filesys_lock);
   file_close (file);
-  lock_release (&filesys_lock);
   return -1;
 }
 
@@ -514,7 +488,6 @@ munmap_ (mapid_t mapping)
   if (mmap_data == NULL)
     return;
 
-  lock_acquire (&filesys_lock);
   off_t len = file_length (mmap_data->file);
   for (off_t i = 0; i < len; i += PGSIZE)
     {
@@ -530,7 +503,6 @@ munmap_ (mapid_t mapping)
       page_free (page);
     }
   file_close (mmap_data->file);
-  lock_release (&filesys_lock);
 
   lock_acquire (&mmap_table_lock);
   hash_delete (&mmap_table, &mmap_data->hashelem);
