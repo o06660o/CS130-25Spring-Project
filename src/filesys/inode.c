@@ -247,7 +247,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
         break;
 
       /* Read sector from cache. */
-      cache_read (sector_idx, buffer + bytes_read, offset, chunk_size);
+      cache_read (sector_idx, buffer + bytes_read, chunk_size, sector_ofs);
 
       /* Advance. */
       size -= chunk_size;
@@ -293,7 +293,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
         break;
 
       /* Writes data to cache. */
-      cache_write (sector_idx, buffer + bytes_written, offset, chunk_size);
+      cache_write (sector_idx, buffer + bytes_written, chunk_size, sector_ofs);
 
       /* Advance. */
       size -= chunk_size;

@@ -23,13 +23,15 @@ struct cache_block
 };
 
 static struct cache_block cache[CACHE_SIZE]; /* Cache blocks. */
-static int clock_ptr; /* Pointer for the clock algorithm. */
+static int clock_ptr;                /* Pointer for the clock algorithm. */
+static struct lock cache_clock_lock; /* Lock for clock algorithm. */
 
 /* Initializes the buffer cache. */
 void
 cache_init (void)
 {
   fs_device = block_get_role (BLOCK_FILESYS);
+  lock_init (&cache_clock_lock);
   clock_ptr = 0;
   for (int i = 0; i < CACHE_SIZE; ++i)
     {
@@ -45,6 +47,7 @@ cache_init (void)
 static struct cache_block *
 cache_evict (void)
 {
+  lock_acquire (&cache_clock_lock);
   struct cache_block *block = NULL;
   while (true)
     {
@@ -59,6 +62,7 @@ cache_evict (void)
       block->accessed = false;
       rwlock_release (&block->rwlock);
     }
+  lock_release (&cache_clock_lock);
   if (block->dirty)
     {
       block_write (fs_device, block->sector, block->data);
@@ -89,9 +93,9 @@ cache_read (block_sector_t sector, void *buffer, off_t size, off_t offset)
   block->sector = sector;
   block_read (fs_device, sector, block->data);
   memcpy (buffer, block->data + offset, size);
-  block->valid = true;
   block->dirty = false;
   block->accessed = false;
+  block->valid = true;
   rwlock_release (&block->rwlock);
 }
 
@@ -115,10 +119,11 @@ cache_write (block_sector_t sector, const void *buffer, off_t size,
     }
   struct cache_block *block = cache_evict ();
   block->sector = sector;
+  block_read (fs_device, sector, block->data);
   memcpy (block->data + offset, buffer, size);
-  block->valid = true;
   block->dirty = true;
   block->accessed = false;
+  block->valid = true;
   rwlock_release (&block->rwlock);
 }
 
