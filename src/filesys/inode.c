@@ -65,12 +65,20 @@ static struct list open_inodes;
 /* Lock to protect the open_inodes list. */
 static struct lock open_inodes_lock;
 
+/* Lock to protect inode reopening.
+
+   inode_reopen() and inode_close() cannot be called simultaneously on the
+   same inode.
+*/
+static struct lock inode_reopen_lock;
+
 /* Initializes the inode module. */
 void
 inode_init (void)
 {
   list_init (&open_inodes);
   lock_init (&open_inodes_lock);
+  lock_init (&inode_reopen_lock);
 }
 
 /* Initializes an inode with LENGTH bytes of data and
@@ -163,9 +171,11 @@ inode_reopen (struct inode *inode)
 {
   if (inode == NULL)
     return NULL;
+  lock_acquire (&inode_reopen_lock);
   rwlock_acquire_writer (&inode->rwlock);
   inode->open_cnt++;
   rwlock_release (&inode->rwlock);
+  lock_release (&inode_reopen_lock);
   return inode;
 }
 
@@ -186,6 +196,7 @@ inode_close (struct inode *inode)
   if (inode == NULL)
     return;
 
+  lock_acquire (&open_inodes_lock);
   rwlock_acquire_writer (&inode->rwlock);
 
   /* Release resources if this was the last opener. */
@@ -202,11 +213,14 @@ inode_close (struct inode *inode)
                             bytes_to_sectors (inode->data.length));
         }
 
+      // inode->dying = true;
       rwlock_release (&inode->rwlock);
+      lock_release (&open_inodes_lock);
       free (inode);
       return;
     }
   rwlock_release (&inode->rwlock);
+  lock_release (&open_inodes_lock);
 }
 
 /* Marks INODE to be deleted when it is closed by the last caller who
