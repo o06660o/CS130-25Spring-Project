@@ -4,6 +4,7 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include <debug.h>
+#include <list.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,18 +14,18 @@
 /* Cache a sector of disk storage. */
 struct cache_block
 {
-  struct block *block;   /* Pointer to the block device. */
-  block_sector_t sector; /* Sector number of the block. */
-  bool accessed; /* true if block has been accessed, false otherwise. */
-  bool dirty;    /* true if block dirty, false otherwise. */
-  bool valid;    /* true if block valid, false otherwise. */
+  struct block *block;             /* Pointer to the block device. */
+  block_sector_t sector;           /* Sector number of the block. */
+  bool dirty;                      /* true if block dirty, false otherwise. */
+  bool valid;                      /* true if block valid, false otherwise. */
   uint8_t data[BLOCK_SECTOR_SIZE]; /* Data stored in the block. */
-  struct lock lock; /* A more fine-grained lock for this block. */
+  struct lock lock;      /* A more fine-grained lock for this block. */
+  struct list_elem elem; /* List element for the cache list. */
 };
 
 static struct cache_block cache[CACHE_SIZE]; /* Cache blocks. */
-static int clock_ptr;          /* Pointer for the clock algorithm. */
-static struct lock cache_lock; /* Lock for clock algorithm. */
+static struct list cache_list; /* cache list, sorted by reference time. */
+static struct lock cache_lock; /* Lock for LRU algorithm. */
 
 static bool flush_done = false; /* If flush thread should stop. */
 
@@ -35,43 +36,15 @@ void
 cache_init (void)
 {
   lock_init (&cache_lock);
-  clock_ptr = 0;
+  list_init (&cache_list);
   for (int i = 0; i < CACHE_SIZE; ++i)
     {
       lock_init (&cache[i].lock);
       cache[i].valid = false;
       cache[i].dirty = false;
+      list_push_back (&cache_list, &cache[i].elem);
     }
   thread_create ("cache flush", PRI_DEFAULT, flush_func, NULL);
-}
-
-/* Evicts a cache block, writing it back to disk if dirty.
-   The rwlock of evicted block will be released in cache_read() or
-   cache_write(). */
-static struct cache_block *
-cache_evict (void)
-{
-  struct cache_block *cb = NULL;
-  while (true)
-    {
-      cb = &cache[clock_ptr];
-      ++clock_ptr;
-      if (clock_ptr >= CACHE_SIZE)
-        clock_ptr = 0;
-
-      lock_acquire (&cb->lock);
-      if (!cb->valid || !cb->accessed)
-        break;
-      cb->accessed = false;
-      lock_release (&cb->lock);
-    }
-  if (cb->dirty)
-    {
-      block_write (cb->block, cb->sector, cb->data);
-      cb->dirty = false;
-    }
-  cb->valid = false;
-  return cb;
 }
 
 /* Reads a block from the cache. If the block is not in the cache, read it
@@ -82,37 +55,53 @@ cache_read (struct block *block, block_sector_t sector, void *buffer,
 {
   ASSERT (sector != BLOCK_SECTOR_NONE);
   struct cache_block *cb = NULL;
+  bool is_cache_block_lock_held = false;
   lock_acquire (&cache_lock);
   for (int i = 0; i < CACHE_SIZE; ++i)
     {
-      lock_acquire (&cache[i].lock);
+      bool is_current_cache_block_lock_held
+          = lock_held_by_current_thread (&cache[i].lock);
+      if (!is_current_cache_block_lock_held)
+        lock_acquire (&cache[i].lock);
       if (cache[i].valid && cache[i].block == block
           && cache[i].sector == sector)
         {
           cb = &cache[i];
-          cb->accessed = true;
+          list_remove (&cb->elem);
+          list_push_back (&cache_list, &cb->elem);
+          is_cache_block_lock_held = is_current_cache_block_lock_held;
           break;
         }
-      lock_release (&cache[i].lock);
+      if (!is_current_cache_block_lock_held)
+        lock_release (&cache[i].lock);
     }
   if (cb == NULL)
     {
-      cb = cache_evict ();
-      lock_release (&cache_lock);
+      /* Evicts a cache block, writing it back to disk if dirty. */
+      cb = list_entry (list_pop_front (&cache_list), struct cache_block, elem);
+      is_cache_block_lock_held = lock_held_by_current_thread (&cb->lock);
+      if (!is_cache_block_lock_held)
+        lock_acquire (&cb->lock);
+      list_push_back (&cache_list, &cb->elem);
 
       /* Release the lock before waiting for IO. */
+      lock_release (&cache_lock);
+
+      if (cb->valid && cb->dirty)
+        block_write (cb->block, cb->sector, cb->data);
+
       cb->block = block;
       cb->sector = sector;
       block_read (block, sector, cb->data);
       cb->dirty = false;
-      cb->accessed = false;
       cb->valid = true;
     }
   else
     lock_release (&cache_lock);
 
   memcpy (buffer, cb->data + offset, size);
-  lock_release (&cb->lock);
+  if (!is_cache_block_lock_held)
+    lock_release (&cb->lock);
 }
 
 /* Writes a block to the cache. */
@@ -122,38 +111,54 @@ cache_write (struct block *block, block_sector_t sector, const void *buffer,
 {
   ASSERT (sector != BLOCK_SECTOR_NONE);
   struct cache_block *cb = NULL;
+  bool is_cache_block_lock_held = false;
   lock_acquire (&cache_lock);
   for (int i = 0; i < CACHE_SIZE; ++i)
     {
-      lock_acquire (&cache[i].lock);
+      bool is_current_cache_block_lock_held
+          = lock_held_by_current_thread (&cache[i].lock);
+      if (!is_current_cache_block_lock_held)
+        lock_acquire (&cache[i].lock);
       if (cache[i].valid && cache[i].block == block
           && cache[i].sector == sector)
         {
           cb = &cache[i];
           cb->dirty = true;
-          cb->accessed = true;
+          list_remove (&cb->elem);
+          list_push_back (&cache_list, &cb->elem);
+          is_cache_block_lock_held = is_current_cache_block_lock_held;
           break;
         }
-      lock_release (&cache[i].lock);
+      if (!is_current_cache_block_lock_held)
+        lock_release (&cache[i].lock);
     }
   if (cb == NULL)
     {
-      cb = cache_evict ();
-      lock_release (&cache_lock);
+      /* Evicts a cache block, writing it back to disk if dirty. */
+      cb = list_entry (list_pop_front (&cache_list), struct cache_block, elem);
+      is_cache_block_lock_held = lock_held_by_current_thread (&cb->lock);
+      if (!is_cache_block_lock_held)
+        lock_acquire (&cb->lock);
+      list_push_back (&cache_list, &cb->elem);
 
       /* Release the lock before waiting for IO. */
+      lock_release (&cache_lock);
+
+      if (cb->valid && cb->dirty)
+        block_write (cb->block, cb->sector, cb->data);
+
       cb->block = block;
       cb->sector = sector;
       block_read (block, sector, cb->data);
       cb->dirty = true;
-      cb->accessed = false;
       cb->valid = true;
     }
   else
     lock_release (&cache_lock);
 
   memcpy (cb->data + offset, buffer, size);
-  lock_release (&cb->lock);
+  if (!is_cache_block_lock_held)
+    lock_release (&cb->lock);
 }
 
 /* Writes all dirty block back to disk. */
