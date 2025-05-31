@@ -3,6 +3,7 @@
 
 #include "devices/block.h"
 #include "filesys/off_t.h"
+#include "stdbool.h"
 
 /* Number of ticks between cache flushes. */
 #define CACHE_FLUSH_FREQ 100
