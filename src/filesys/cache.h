@@ -9,8 +9,8 @@
 #define CACHE_FLUSH_FREQ 100
 
 void cache_init (void);
-void cache_read (block_sector_t, void *, off_t, off_t);
-void cache_write (block_sector_t, const void *, off_t, off_t);
+void cache_read (struct block *, block_sector_t, void *, off_t, off_t);
+void cache_write (struct block *, block_sector_t, const void *, off_t, off_t);
 void cache_flush (bool);
 
 #endif /* filesys/cache.h */
