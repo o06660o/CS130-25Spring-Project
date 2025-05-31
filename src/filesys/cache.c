@@ -5,6 +5,7 @@
 #include "threads/thread.h"
 #include <debug.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 
 #define CACHE_SIZE 64
@@ -79,6 +80,7 @@ void
 cache_read (struct block *block, block_sector_t sector, void *buffer,
             off_t size, off_t offset)
 {
+  ASSERT (sector != BLOCK_SECTOR_NONE);
   struct cache_block *cb = NULL;
   lock_acquire (&cache_lock);
   for (int i = 0; i < CACHE_SIZE; ++i)
@@ -118,6 +120,7 @@ void
 cache_write (struct block *block, block_sector_t sector, const void *buffer,
              off_t size, off_t offset)
 {
+  ASSERT (sector != BLOCK_SECTOR_NONE);
   struct cache_block *cb = NULL;
   lock_acquire (&cache_lock);
   for (int i = 0; i < CACHE_SIZE; ++i)
