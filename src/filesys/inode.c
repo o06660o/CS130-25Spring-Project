@@ -204,40 +204,39 @@ inode_grow (struct inode_disk *disk_inode, int sectors)
     if (!inode_indirect_allocate (doubly_indirect))
       return false;
   {
-    struct indirect_block *ib = malloc (sizeof (struct indirect_block));
-    cache_read (fs_device, *doubly_indirect, ib, BLOCK_SECTOR_SIZE, 0);
+    struct indirect_block *dib = malloc (sizeof (struct indirect_block));
+    cache_read (fs_device, *doubly_indirect, dib, BLOCK_SECTOR_SIZE, 0);
     for (int i = 0; i < 128 && sectors > 0; i++)
       {
-        if (ib->sectors[i] != BLOCK_SECTOR_NONE)
-          continue;
-        if (!inode_indirect_allocate (&ib->sectors[i]))
+        if (dib->sectors[i] == BLOCK_SECTOR_NONE
+            && !inode_indirect_allocate (&dib->sectors[i]))
           {
-            free (ib);
+            free (dib);
             return false;
           }
-        struct indirect_block *ib2 = malloc (sizeof (struct indirect_block));
-        cache_read (fs_device, ib->sectors[i], ib2, BLOCK_SECTOR_SIZE, 0);
+        struct indirect_block *ib = malloc (sizeof (struct indirect_block));
+        cache_read (fs_device, dib->sectors[i], ib, BLOCK_SECTOR_SIZE, 0);
         for (int j = 0; j < 128 && sectors > 0; j++)
           {
-            if (ib2->sectors[j] != BLOCK_SECTOR_NONE)
+            if (ib->sectors[j] != BLOCK_SECTOR_NONE)
               continue;
             sectors--;
 
-            block_sector_t *sector = &ib2->sectors[j];
+            block_sector_t *sector = &ib->sectors[j];
             if (free_map_allocate (1, sector))
               cache_write (fs_device, *sector, zeros, BLOCK_SECTOR_SIZE, 0);
             else
               {
-                free (ib2);
                 free (ib);
+                free (dib);
                 return false;
               }
           }
-        cache_write (fs_device, ib->sectors[i], ib2, BLOCK_SECTOR_SIZE, 0);
-        free (ib2);
+        cache_write (fs_device, dib->sectors[i], ib, BLOCK_SECTOR_SIZE, 0);
+        free (ib);
       }
-    cache_write (fs_device, *doubly_indirect, ib, BLOCK_SECTOR_SIZE, 0);
-    free (ib);
+    cache_write (fs_device, *doubly_indirect, dib, BLOCK_SECTOR_SIZE, 0);
+    free (dib);
   }
 
   return sectors <= 0;
