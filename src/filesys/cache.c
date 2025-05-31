@@ -19,23 +19,23 @@ struct cache_block
   bool dirty;    /* true if block dirty, false otherwise. */
   bool valid;    /* true if block valid, false otherwise. */
   uint8_t data[BLOCK_SECTOR_SIZE]; /* Data stored in the block. */
-  struct rwlock rwlock;            /* Read-Write lock for block access. */
+  struct lock lock; /* A more fine-grained lock for this block. */
 };
 
 static struct cache_block cache[CACHE_SIZE]; /* Cache blocks. */
-static int clock_ptr;                /* Pointer for the clock algorithm. */
-static struct lock cache_clock_lock; /* Lock for clock algorithm. */
+static int clock_ptr;          /* Pointer for the clock algorithm. */
+static struct lock cache_lock; /* Lock for clock algorithm. */
 
 /* Initializes the buffer cache. */
 void
 cache_init (void)
 {
   fs_device = block_get_role (BLOCK_FILESYS);
-  lock_init (&cache_clock_lock);
+  lock_init (&cache_lock);
   clock_ptr = 0;
   for (int i = 0; i < CACHE_SIZE; ++i)
     {
-      rwlock_init (&cache[i].rwlock);
+      lock_init (&cache[i].lock);
       cache[i].valid = false;
       cache[i].dirty = false;
     }
@@ -47,7 +47,6 @@ cache_init (void)
 static struct cache_block *
 cache_evict (void)
 {
-  lock_acquire (&cache_clock_lock);
   struct cache_block *block = NULL;
   while (true)
     {
@@ -56,13 +55,12 @@ cache_evict (void)
       if (clock_ptr >= CACHE_SIZE)
         clock_ptr = 0;
 
-      rwlock_acquire_writer (&block->rwlock);
+      lock_acquire (&block->lock);
       if (!block->valid || !block->accessed)
         break;
       block->accessed = false;
-      rwlock_release (&block->rwlock);
+      lock_release (&block->lock);
     }
-  lock_release (&cache_clock_lock);
   if (block->dirty)
     {
       block_write (fs_device, block->sector, block->data);
@@ -77,26 +75,36 @@ cache_evict (void)
 void
 cache_read (block_sector_t sector, void *buffer, off_t size, off_t offset)
 {
+  struct cache_block *block = NULL;
+  lock_acquire (&cache_lock);
   for (int i = 0; i < CACHE_SIZE; ++i)
     {
-      rwlock_acquire_reader (&cache[i].rwlock);
+      lock_acquire (&cache[i].lock);
       if (cache[i].valid && cache[i].sector == sector)
         {
-          memcpy (buffer, cache[i].data + offset, size);
-          cache[i].accessed = true;
-          rwlock_release (&cache[i].rwlock);
-          return;
+          block = &cache[i];
+          block->accessed = true;
+          break;
         }
-      rwlock_release (&cache[i].rwlock);
+      lock_release (&cache[i].lock);
     }
-  struct cache_block *block = cache_evict ();
-  block->sector = sector;
-  block_read (fs_device, sector, block->data);
+  if (block == NULL)
+    {
+      block = cache_evict ();
+      lock_release (&cache_lock);
+
+      /* Release the lock before waiting for IO. */
+      block->sector = sector;
+      block_read (fs_device, sector, block->data);
+      block->dirty = false;
+      block->accessed = false;
+      block->valid = true;
+    }
+  else
+    lock_release (&cache_lock);
+
   memcpy (buffer, block->data + offset, size);
-  block->dirty = false;
-  block->accessed = false;
-  block->valid = true;
-  rwlock_release (&block->rwlock);
+  lock_release (&block->lock);
 }
 
 /* Writes a block to the cache. */
@@ -104,27 +112,37 @@ void
 cache_write (block_sector_t sector, const void *buffer, off_t size,
              off_t offset)
 {
+  struct cache_block *block = NULL;
+  lock_acquire (&cache_lock);
   for (int i = 0; i < CACHE_SIZE; ++i)
     {
-      rwlock_acquire_writer (&cache[i].rwlock);
+      lock_acquire (&cache[i].lock);
       if (cache[i].valid && cache[i].sector == sector)
         {
-          memcpy (cache[i].data + offset, buffer, size);
-          cache[i].dirty = true;
-          cache[i].accessed = true;
-          rwlock_release (&cache[i].rwlock);
-          return;
+          block = &cache[i];
+          block->dirty = true;
+          block->accessed = true;
+          break;
         }
-      rwlock_release (&cache[i].rwlock);
+      lock_release (&cache[i].lock);
     }
-  struct cache_block *block = cache_evict ();
-  block->sector = sector;
-  block_read (fs_device, sector, block->data);
+  if (block == NULL)
+    {
+      block = cache_evict ();
+      lock_release (&cache_lock);
+
+      /* Release the lock before waiting for IO. */
+      block->sector = sector;
+      block_read (fs_device, sector, block->data);
+      block->dirty = true;
+      block->accessed = false;
+      block->valid = true;
+    }
+  else
+    lock_release (&cache_lock);
+
   memcpy (block->data + offset, buffer, size);
-  block->dirty = true;
-  block->accessed = false;
-  block->valid = true;
-  rwlock_release (&block->rwlock);
+  lock_release (&block->lock);
 }
 
 /* Writes all dirty block back to disk. Must be called with interrupt off. */
