@@ -8,6 +8,9 @@
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
+#ifdef FILESYS
+#include "filesys/cache.h"
+#endif
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -188,11 +191,17 @@ timer_interrupt (struct intr_frame *args UNUSED)
   timer_wakeup_threads (ticks);
   if (thread_mlfqs && ticks % TIMER_FREQ == 0)
     {
+      /* We are in external interrupt context and interrupts are off. There is
+         actually no need to disable interrupts here. */
       enum intr_level old_level = intr_disable ();
       thread_calc_load_avg ();
       thread_foreach (thread_calc_recent_cpu, NULL);
       intr_set_level (old_level);
     }
+#ifdef FILESYS
+  if (ticks % CACHE_FLUSH_FREQ == 0)
+    cache_flush ();
+#endif
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
