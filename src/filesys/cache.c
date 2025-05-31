@@ -1,7 +1,8 @@
 #include "filesys/cache.h"
 #include "devices/block.h"
-#include "filesys/inode.h"
+#include "devices/timer.h"
 #include "threads/synch.h"
+#include "threads/thread.h"
 #include <debug.h>
 #include <stdbool.h>
 #include <string.h>
@@ -26,6 +27,10 @@ static struct cache_block cache[CACHE_SIZE]; /* Cache blocks. */
 static int clock_ptr;          /* Pointer for the clock algorithm. */
 static struct lock cache_lock; /* Lock for clock algorithm. */
 
+static bool flush_done = false; /* If flush thread should stop. */
+
+static void flush_func (void *aux);
+
 /* Initializes the buffer cache. */
 void
 cache_init (void)
@@ -39,6 +44,7 @@ cache_init (void)
       cache[i].valid = false;
       cache[i].dirty = false;
     }
+  thread_create ("cache flush", PRI_DEFAULT, flush_func, NULL);
 }
 
 /* Evicts a cache block, writing it back to disk if dirty.
@@ -145,10 +151,12 @@ cache_write (block_sector_t sector, const void *buffer, off_t size,
   lock_release (&block->lock);
 }
 
-/* Writes all dirty block back to disk. Must be called with interrupt off. */
+/* Writes all dirty block back to disk. */
 void
-cache_flush (void)
+cache_flush (bool done)
 {
+  flush_done = done;
+  lock_acquire (&cache_lock);
   for (int i = 0; i < CACHE_SIZE; ++i)
     {
       if (cache[i].valid && cache[i].dirty)
@@ -156,5 +164,18 @@ cache_flush (void)
           block_write (fs_device, cache[i].sector, cache[i].data);
           cache[i].dirty = false;
         }
+    }
+  lock_release (&cache_lock);
+}
+
+/* We need to create a thread to periodically flush the cache.
+   This function is a placeholder for that thread's function. */
+static void
+flush_func (void *aux UNUSED)
+{
+  while (!flush_done)
+    {
+      timer_sleep (CACHE_FLUSH_FREQ);
+      cache_flush (false);
     }
 }
