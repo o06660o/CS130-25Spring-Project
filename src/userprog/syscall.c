@@ -59,11 +59,11 @@ static void close_ (int fd);
 static mapid_t mmap_ (int fd, void *addr);
 static void munmap_ (mapid_t mapping);
 #endif /* VM */
-bool chdir (const char *dir);
-bool mkdir (const char *dir);
-bool readdir (int fd, char *name);
-bool isdir (int fd);
-int inumber (int fd);
+static bool chdir_ (const char *dir);
+static bool mkdir_ (const char *dir);
+static bool readdir_ (int fd, char *name);
+static bool isdir_ (int fd);
+static int inumber_ (int fd);
 
 void
 syscall_init (void)
@@ -243,32 +243,32 @@ syscall_handler (struct intr_frame *f)
     case SYS_CHDIR: /* Change the current working directory. */
       {
         const char *dir = READ (f->esp, delta, const char *);
-        f->eax = chdir (dir);
+        f->eax = chdir_ (dir);
         break;
       }
     case SYS_MKDIR: /* Create a directory. */
       {
         const char *dir = READ (f->esp, delta, const char *);
-        f->eax = mkdir (dir);
+        f->eax = mkdir_ (dir);
         break;
       }
     case SYS_READDIR: /* Read a directory. */
       {
         int fd = READ (f->esp, delta, int);
         char *name = READ (f->esp, delta, char *);
-        f->eax = readdir (fd, name);
+        f->eax = readdir_ (fd, name);
         break;
       }
     case SYS_ISDIR: /* Check if a file descriptor is a directory. */
       {
         int fd = READ (f->esp, delta, int);
-        f->eax = isdir (fd);
+        f->eax = isdir_ (fd);
         break;
       }
     case SYS_INUMBER: /* Get the inode number of a file. */
       {
         int fd = READ (f->esp, delta, int);
-        f->eax = inumber (fd);
+        f->eax = inumber_ (fd);
         break;
       }
 
@@ -633,8 +633,8 @@ hash_query (mapid_t mapping, tid_t owner)
 #endif /* VM */
 
 /* The chdir syscall. */
-bool
-chdir (const char *dir)
+static bool
+chdir_ (const char *dir)
 {
   if (!is_valid_str (dir, READDIR_MAX_LEN + 1))
     return false; /* Directory name too long. */
@@ -642,8 +642,8 @@ chdir (const char *dir)
 }
 
 /* The mkdir syscall. */
-bool
-mkdir (const char *dir)
+static bool
+mkdir_ (const char *dir)
 {
   if (!is_valid_str (dir, READDIR_MAX_LEN + 1))
     return false; /* Directory name too long. */
@@ -651,8 +651,8 @@ mkdir (const char *dir)
 }
 
 /* The readdir syscall. */
-bool
-readdir (int fd, char *name)
+static bool
+readdir_ (int fd, char *name)
 {
   if (!is_valid_str (name, READDIR_MAX_LEN + 1))
     return false; /* Directory name too long. */
@@ -667,8 +667,8 @@ readdir (int fd, char *name)
 }
 
 /* The isdir syscall. */
-bool
-isdir (int fd)
+static bool
+isdir_ (int fd)
 {
   if (fd < 0 || fd >= OPEN_FILE_MAX)
     return false;
@@ -684,8 +684,8 @@ isdir (int fd)
 }
 
 /* The inumber syscall. */
-int
-inumber (int fd)
+static int
+inumber_ (int fd)
 {
   if (fd < 0 || fd >= OPEN_FILE_MAX)
     return false;
