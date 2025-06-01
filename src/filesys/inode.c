@@ -7,6 +7,7 @@
 #include <debug.h>
 #include <list.h>
 #include <round.h>
+#include <stdint.h>
 #include <string.h>
 
 /* Identifies an inode. */

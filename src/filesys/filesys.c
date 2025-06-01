@@ -274,6 +274,6 @@ filesys_readdir (struct file *file, char *name)
 {
   struct dir *dir = dir_open (file_get_inode (file));
   bool success = dir != NULL && dir_readdir (dir, name);
-  dir_close (dir);
+  /* Ownership is not taken, so we don't close the directory. */
   return success;
 }
