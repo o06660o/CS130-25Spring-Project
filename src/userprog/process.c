@@ -80,6 +80,9 @@ process_execute (const char *file_name)
   struct thread *new_thread = tid_to_thread (tid);
   struct thread *cur = thread_current ();
   ASSERT (new_thread->creator == cur);
+#ifdef FILESYS
+  new_thread->cwd = cur->cwd; /* Inherit the current working directory. */
+#endif
   if (!init_exit_data (new_thread))
     return TID_ERROR;
   /* Don't use new_thread->creator to refer to cur, because new_thread may

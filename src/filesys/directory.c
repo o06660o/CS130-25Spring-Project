@@ -2,6 +2,7 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "threads/thread.h"
 #include <list.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,9 +25,10 @@ struct dir_entry
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
 bool
-dir_create (block_sector_t sector, size_t entry_cnt)
+dir_create (block_sector_t sector, size_t entry_cnt, block_sector_t parent)
 {
-  return inode_create (sector, entry_cnt * sizeof (struct dir_entry), true);
+  off_t length = entry_cnt * sizeof (struct dir_entry);
+  return inode_create (sector, length, true, parent);
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -35,7 +37,7 @@ struct dir *
 dir_open (struct inode *inode)
 {
   struct dir *dir = calloc (1, sizeof *dir);
-  if (inode != NULL && dir != NULL)
+  if (inode != NULL && dir != NULL && inode_is_dir (inode))
     {
       dir->inode = inode;
       dir->pos = 0;
@@ -50,11 +52,18 @@ dir_open (struct inode *inode)
 }
 
 /* Opens the root directory and returns a directory for it.
-   Return true if successful, false on failure. */
+   Return NULL on failure. */
 struct dir *
 dir_open_root (void)
 {
   return dir_open (inode_open (ROOT_DIR_SECTOR));
+}
+
+/* Returns the current working directory. */
+struct dir *
+dir_open_cwd (void)
+{
+  return dir_open (inode_open (thread_current ()->cwd));
 }
 
 /* Opens and returns a new directory for the same inode as DIR.
@@ -81,6 +90,49 @@ struct inode *
 dir_get_inode (struct dir *dir)
 {
   return dir->inode;
+}
+
+/* Walks through the directory structure starting from DIR. Returns true if
+   successful, DIR and NAME will be updated during the walk. */
+bool
+dir_walk (struct dir **dir, char *ptr)
+{
+  /* Do nothing for empty path. */
+  if (ptr == NULL || *ptr == '\0')
+    return true;
+
+  for (char *save_ptr = NULL, *token = strtok_r (ptr, "/", &save_ptr);
+       token != NULL; token = strtok_r (NULL, "/", &save_ptr))
+    {
+      if (strcmp (token, ".") == 0)
+        continue; /* Skip current directory. */
+      if (strcmp (token, "..") == 0)
+        {
+          block_sector_t parent = inode_get_parent (dir_get_inode (*dir));
+          struct dir *parent_dir = dir_open (inode_open (parent));
+          if (parent_dir == NULL)
+            return false;
+          dir_close (*dir);
+          *dir = parent_dir;
+          continue; /* Move to parent directory. */
+        }
+
+      struct inode *inode = NULL;
+      if (!dir_lookup (*dir, token, &inode))
+        return false;
+      if (!inode_is_dir (inode))
+        {
+          inode_close (inode);
+          return false; /* Not a directory. */
+        }
+      struct dir *new_dir = dir_open (inode);
+
+      if (new_dir == NULL)
+        return false; /* Failed to open directory. */
+      dir_close (*dir);
+      *dir = new_dir;
+    }
+  return true;
 }
 
 /* Searches DIR for a file with the given NAME.
@@ -173,6 +225,8 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   e.inode_sector = inode_sector;
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
 
+  inode_update_file_cnt (dir_get_inode (dir), 1);
+
 done:
   return success;
 }
@@ -200,6 +254,21 @@ dir_remove (struct dir *dir, const char *name)
   if (inode == NULL)
     goto done;
 
+  if (inode_is_dir (inode))
+    {
+      if (!dir_empty (dir_open (inode)))
+        {
+          inode_close (inode);
+          return false;
+        }
+      block_sector_t sector = inode_get_inumber (inode);
+      if (sector == ROOT_DIR_SECTOR || sector == thread_current ()->cwd)
+        {
+          inode_close (inode);
+          return false; /* Cannot remove root or current directory. */
+        }
+    }
+
   /* Erase directory entry. */
   e.in_use = false;
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e)
@@ -208,6 +277,8 @@ dir_remove (struct dir *dir, const char *name)
   /* Remove inode. */
   inode_remove (inode);
   success = true;
+
+  inode_update_file_cnt (dir_get_inode (dir), -1);
 
 done:
   inode_close (inode);
@@ -232,4 +303,12 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
         }
     }
   return false;
+}
+
+/* Returns true if DIR is empty, false otherwise.
+   An empty directory contains no entries except for "." and "..". */
+bool
+dir_empty (struct dir *dir)
+{
+  return inode_file_cnt (dir_get_inode (dir)) == 0;
 }

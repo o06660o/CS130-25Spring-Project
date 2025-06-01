@@ -10,6 +10,9 @@
 #ifdef VM
 #include <lib/user/syscall.h>
 #endif
+#ifdef FILESYS
+#include "devices/block.h"
+#endif
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -145,6 +148,9 @@ struct thread
   struct list page_list; /* Pages a user process owns. */
   void *user_esp; /* Stores esp on the transition from user to kernel mode */
   mapid_t mapid_next; /* Next mapid for this process. */
+#endif
+#ifdef FILESYS
+  block_sector_t cwd; /* Current working directory. */
 #endif
 
   /* Owned by thread.c. */

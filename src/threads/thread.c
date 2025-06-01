@@ -15,6 +15,9 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
+#ifdef FILESYS
+#include "filesys/filesys.h"
+#endif
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
@@ -527,6 +530,9 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->page_list);
   t->user_esp = (void *)0xdeadbeef;
   t->mapid_next = 1;
+#endif
+#ifdef FILESYS
+  t->cwd = ROOT_DIR_SECTOR;
 #endif
 
   old_level = intr_disable ();

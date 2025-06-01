@@ -24,15 +24,17 @@ struct indirect_block
 struct inode_disk
 {
   int32_t is_dir;                 /* True if this inode is a directory. */
+  int32_t file_cnt;               /* Only useful when it is a directory. */
   off_t length;                   /* File size in bytes. */
+  block_sector_t parent;          /* Parent directory inode number. */
   block_sector_t direct[10];      /* Direct pointers to data. */
   block_sector_t indirect;        /* Indirect pointer to data. */
   block_sector_t doubly_indirect; /* Doubly indirect pointer to data. */
   unsigned magic;                 /* Magic number. */
 
   /* Not used. */
-  uint8_t unused[BLOCK_SECTOR_SIZE - sizeof (block_sector_t) * 12
-                 - sizeof (off_t) - sizeof (unsigned) - sizeof (int32_t)];
+  uint8_t unused[BLOCK_SECTOR_SIZE - sizeof (block_sector_t) * 13
+                 - sizeof (off_t) - sizeof (unsigned) - sizeof (int32_t) * 2];
 };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -150,7 +152,7 @@ inode_indirect_allocate (block_sector_t *sector)
 }
 
 static bool
-inode_grow (struct inode_disk *disk_inode, int sectors)
+inode_grow_unlocked (struct inode_disk *disk_inode, int sectors)
 {
   if (sectors == 0)
     return true;
@@ -372,7 +374,8 @@ fail:
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (block_sector_t sector, off_t length, bool is_dir)
+inode_create (block_sector_t sector, off_t length, bool is_dir,
+              block_sector_t parent)
 {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -388,13 +391,15 @@ inode_create (block_sector_t sector, off_t length, bool is_dir)
     {
       size_t sectors = bytes_to_sectors (length);
       disk_inode->is_dir = is_dir;
+      disk_inode->file_cnt = 0;
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
+      disk_inode->parent = parent;
       for (int i = 0; i < 10; i++)
         disk_inode->direct[i] = BLOCK_SECTOR_NONE;
       disk_inode->indirect = BLOCK_SECTOR_NONE;
       disk_inode->doubly_indirect = BLOCK_SECTOR_NONE;
-      if (inode_grow (disk_inode, sectors))
+      if (inode_grow_unlocked (disk_inode, sectors))
         {
           cache_write (fs_device, sector, disk_inode, BLOCK_SECTOR_SIZE, 0);
           success = true;
@@ -462,7 +467,20 @@ inode_reopen (struct inode *inode)
 block_sector_t
 inode_get_inumber (struct inode *inode)
 {
-  return inode->sector;
+  rwlock_acquire_reader (&inode->rwlock);
+  block_sector_t inumber = inode->sector;
+  rwlock_release (&inode->rwlock);
+  return inumber;
+}
+
+/* Returns the block sector number of the parent directory of INODE. */
+block_sector_t
+inode_get_parent (struct inode *inode)
+{
+  rwlock_acquire_reader (&inode->rwlock);
+  block_sector_t parent = inode->data.parent;
+  rwlock_release (&inode->rwlock);
+  return parent;
 }
 
 static void
@@ -615,7 +633,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       struct inode_disk *data = &inode->data;
       size_t sectors
           = bytes_to_sectors (offset + size) - bytes_to_sectors (data->length);
-      if (!inode_grow (data, sectors))
+      if (!inode_grow_unlocked (data, sectors))
         {
           rwlock_release (&inode->rwlock);
           return 0; /* Allocation failed. */
@@ -701,5 +719,28 @@ inode_length_unlocked (struct inode *inode)
 bool
 inode_is_dir (struct inode *inode)
 {
-  return inode->data.is_dir;
+  rwlock_acquire_reader (&inode->rwlock);
+  bool ret = inode->data.is_dir;
+  rwlock_release (&inode->rwlock);
+  return ret;
+}
+
+int
+inode_file_cnt (struct inode *inode)
+{
+  rwlock_acquire_reader (&inode->rwlock);
+  cache_read (fs_device, inode->sector, &inode->data, BLOCK_SECTOR_SIZE, 0);
+  int ret = inode->data.file_cnt;
+  rwlock_release (&inode->rwlock);
+  return ret;
+}
+
+void
+inode_update_file_cnt (struct inode *inode, int delta)
+{
+  rwlock_acquire_writer (&inode->rwlock);
+  cache_read (fs_device, inode->sector, &inode->data, BLOCK_SECTOR_SIZE, 0);
+  inode->data.file_cnt += delta;
+  cache_write (fs_device, inode->sector, &inode->data, BLOCK_SECTOR_SIZE, 0);
+  rwlock_release (&inode->rwlock);
 }

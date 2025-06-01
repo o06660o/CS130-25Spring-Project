@@ -240,6 +240,38 @@ syscall_handler (struct intr_frame *f)
       }
 #endif /* VM */
 
+    case SYS_CHDIR: /* Change the current working directory. */
+      {
+        const char *dir = READ (f->esp, delta, const char *);
+        f->eax = chdir (dir);
+        break;
+      }
+    case SYS_MKDIR: /* Create a directory. */
+      {
+        const char *dir = READ (f->esp, delta, const char *);
+        f->eax = mkdir (dir);
+        break;
+      }
+    case SYS_READDIR: /* Read a directory. */
+      {
+        int fd = READ (f->esp, delta, int);
+        char *name = READ (f->esp, delta, char *);
+        f->eax = readdir (fd, name);
+        break;
+      }
+    case SYS_ISDIR: /* Check if a file descriptor is a directory. */
+      {
+        int fd = READ (f->esp, delta, int);
+        f->eax = isdir (fd);
+        break;
+      }
+    case SYS_INUMBER: /* Get the inode number of a file. */
+      {
+        int fd = READ (f->esp, delta, int);
+        f->eax = inumber (fd);
+        break;
+      }
+
     default: /* Unkown syscall. */
       exit_ (-1);
     }
@@ -606,7 +638,7 @@ chdir (const char *dir)
 {
   if (!is_valid_str (dir, READDIR_MAX_LEN + 1))
     return false; /* Directory name too long. */
-  return false;   /* TODO */
+  return filesys_chdir (dir);
 }
 
 /* The mkdir syscall. */
@@ -615,7 +647,7 @@ mkdir (const char *dir)
 {
   if (!is_valid_str (dir, READDIR_MAX_LEN + 1))
     return false; /* Directory name too long. */
-  return false;   /* TODO */
+  return filesys_create (dir, 0, true);
 }
 
 /* The readdir syscall. */
@@ -624,7 +656,14 @@ readdir (int fd, char *name)
 {
   if (!is_valid_str (name, READDIR_MAX_LEN + 1))
     return false; /* Directory name too long. */
-  return false;   /* TODO */
+  if (fd < 0 || fd >= OPEN_FILE_MAX)
+    return false;
+  if (fd_owner[fd] != thread_current ()->tid || fd_entry[fd] == NULL)
+    return false;
+  lock_acquire (&fd_table_lock);
+  struct file *open_file = fd_entry[fd];
+  lock_release (&fd_table_lock);
+  return filesys_readdir (open_file, name);
 }
 
 /* The isdir syscall. */
