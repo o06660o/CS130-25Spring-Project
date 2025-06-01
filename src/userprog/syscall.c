@@ -4,6 +4,7 @@
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "filesys/inode.h"
 #include "threads/interrupt.h"
 #include "threads/malloc.h"
 #include "threads/thread.h"
@@ -58,6 +59,11 @@ static void close_ (int fd);
 static mapid_t mmap_ (int fd, void *addr);
 static void munmap_ (mapid_t mapping);
 #endif /* VM */
+bool chdir (const char *dir);
+bool mkdir (const char *dir);
+bool readdir (int fd, char *name);
+bool isdir (int fd);
+int inumber (int fd);
 
 void
 syscall_init (void)
@@ -273,17 +279,17 @@ exec_ (const char *cmd_line)
 static bool
 create_ (const char *file, unsigned initial_size)
 {
-  if (!is_valid_str (file, NAME_MAX + 1))
+  if (!is_valid_str (file, READDIR_MAX_LEN + 1))
     return false; /* File name too long. */
 
-  return filesys_create (file, initial_size);
+  return filesys_create (file, initial_size, false);
 }
 
 /* The remove syscall. */
 static bool
 remove_ (const char *file)
 {
-  if (!is_valid_str (file, NAME_MAX + 1))
+  if (!is_valid_str (file, READDIR_MAX_LEN + 1))
     return false; /* File name too long. */
   bool success = filesys_remove (file);
   return success;
@@ -293,7 +299,7 @@ remove_ (const char *file)
 static int
 open_ (const char *file)
 {
-  if (!is_valid_str (file, NAME_MAX + 1))
+  if (!is_valid_str (file, READDIR_MAX_LEN + 1))
     return -1; /* File name too long. */
 
   struct file *open_file = filesys_open (file);
@@ -319,13 +325,19 @@ open_ (const char *file)
 static int
 filesize_ (int fd)
 {
-  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
+  if (fd < 0 || fd >= OPEN_FILE_MAX)
     return 0;
+
+  lock_acquire (&fd_table_lock);
+  if (fd_owner[fd] != thread_current ()->tid || fd_entry[fd] == NULL)
+    {
+      lock_release (&fd_table_lock);
+      return 0;
+    }
   struct file *open_file = fd_entry[fd];
-  if (open_file == NULL)
-    return 0;
-  int size = file_length (open_file);
-  return size;
+  lock_release (&fd_table_lock);
+
+  return file_length (open_file);
 }
 
 /* The read syscall. */
@@ -346,12 +358,18 @@ read_ (int fd, void *buffer, unsigned size)
     }
   else if (fd == STDOUT_FILENO)
     return -1;
+  if (fd < 0 || fd >= OPEN_FILE_MAX)
+    return -1;
 
-  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
-    return -1;
+  lock_acquire (&fd_table_lock);
+  if (fd_owner[fd] != thread_current ()->tid || fd_entry[fd] == NULL)
+    {
+      lock_release (&fd_table_lock);
+      return -1;
+    }
   struct file *open_file = fd_entry[fd];
-  if (open_file == NULL)
-    return -1;
+  lock_release (&fd_table_lock);
+
   int ret = file_read (open_file, buffer, size);
   return ret;
 }
@@ -371,11 +389,18 @@ write_ (int fd, const void *buffer, unsigned size)
   else if (fd == STDIN_FILENO)
     return -1;
 
-  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
+  if (fd < 0 || fd >= OPEN_FILE_MAX)
     return -1;
+
+  lock_acquire (&fd_table_lock);
+  if (fd_owner[fd] != thread_current ()->tid || fd_entry[fd] == NULL)
+    {
+      lock_release (&fd_table_lock);
+      return -1;
+    }
   struct file *open_file = fd_entry[fd];
-  if (open_file == NULL)
-    return -1;
+  lock_release (&fd_table_lock);
+
   return file_write (open_file, buffer, size);
 }
 
@@ -383,11 +408,18 @@ write_ (int fd, const void *buffer, unsigned size)
 static void
 seek_ (int fd, unsigned position)
 {
-  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
+  if (fd < 0 || fd >= OPEN_FILE_MAX)
     return;
+
+  lock_acquire (&fd_table_lock);
+  if (fd_owner[fd] != thread_current ()->tid || fd_entry[fd] == NULL)
+    {
+      lock_release (&fd_table_lock);
+      return;
+    }
   struct file *open_file = fd_entry[fd];
-  if (open_file == NULL)
-    return;
+  lock_release (&fd_table_lock);
+
   file_seek (open_file, position);
 }
 
@@ -395,11 +427,18 @@ seek_ (int fd, unsigned position)
 static unsigned
 tell_ (int fd)
 {
-  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
+  if (fd < 0 || fd >= OPEN_FILE_MAX)
     return -1;
+
+  lock_acquire (&fd_table_lock);
+  if (fd_owner[fd] != thread_current ()->tid || fd_entry[fd] == NULL)
+    {
+      lock_release (&fd_table_lock);
+      return -1;
+    }
   struct file *open_file = fd_entry[fd];
-  if (open_file == NULL)
-    return -1;
+  lock_release (&fd_table_lock);
+
   return file_tell (open_file);
 }
 
@@ -407,11 +446,18 @@ tell_ (int fd)
 static void
 close_ (int fd)
 {
-  if (fd < 0 || fd >= OPEN_FILE_MAX || fd_owner[fd] != thread_current ()->tid)
+  if (fd < 0 || fd >= OPEN_FILE_MAX)
     return;
+
+  lock_acquire (&fd_table_lock);
+  if (fd_owner[fd] != thread_current ()->tid || fd_entry[fd] == NULL)
+    {
+      lock_release (&fd_table_lock);
+      return;
+    }
   struct file *open_file = fd_entry[fd];
-  if (open_file == NULL)
-    return;
+  lock_release (&fd_table_lock);
+
   file_close (open_file);
 
   lock_acquire (&fd_table_lock);
@@ -433,10 +479,16 @@ mmap_ (int fd, void *addr)
   if (fd < 0 || fd >= OPEN_FILE_MAX || fd == STDIN_FILENO
       || fd == STDOUT_FILENO)
     return -1;
-  if (fd_owner[fd] != cur->tid || fd_entry[fd] == NULL)
-    return -1;
 
+  lock_acquire (&fd_table_lock);
+  if (fd_owner[fd] != cur->tid || fd_entry[fd] == NULL)
+    {
+      lock_release (&fd_table_lock);
+      return -1;
+    }
   struct file *open_file = fd_entry[fd];
+  lock_release (&fd_table_lock);
+
   struct file *file = file_reopen (open_file);
   off_t file_size = file_length (file);
 
@@ -547,3 +599,64 @@ hash_query (mapid_t mapping, tid_t owner)
   return e != NULL ? hash_entry (e, struct mmap_data, hashelem) : NULL;
 }
 #endif /* VM */
+
+/* The chdir syscall. */
+bool
+chdir (const char *dir)
+{
+  if (!is_valid_str (dir, READDIR_MAX_LEN + 1))
+    return false; /* Directory name too long. */
+  return false;   /* TODO */
+}
+
+/* The mkdir syscall. */
+bool
+mkdir (const char *dir)
+{
+  if (!is_valid_str (dir, READDIR_MAX_LEN + 1))
+    return false; /* Directory name too long. */
+  return false;   /* TODO */
+}
+
+/* The readdir syscall. */
+bool
+readdir (int fd, char *name)
+{
+  if (!is_valid_str (name, READDIR_MAX_LEN + 1))
+    return false; /* Directory name too long. */
+  return false;   /* TODO */
+}
+
+/* The isdir syscall. */
+bool
+isdir (int fd)
+{
+  if (fd < 0 || fd >= OPEN_FILE_MAX)
+    return false;
+  lock_acquire (&fd_table_lock);
+  if (fd_owner[fd] != thread_current ()->tid || fd_entry[fd] == NULL)
+    {
+      lock_release (&fd_table_lock);
+      return false;
+    }
+  struct file *open_file = fd_entry[fd];
+  lock_release (&fd_table_lock);
+  return inode_is_dir (file_get_inode (open_file));
+}
+
+/* The inumber syscall. */
+int
+inumber (int fd)
+{
+  if (fd < 0 || fd >= OPEN_FILE_MAX)
+    return false;
+  lock_acquire (&fd_table_lock);
+  if (fd_owner[fd] != thread_current ()->tid || fd_entry[fd] == NULL)
+    {
+      lock_release (&fd_table_lock);
+      return false;
+    }
+  struct file *open_file = fd_entry[fd];
+  lock_release (&fd_table_lock);
+  return inode_get_inumber (file_get_inode (open_file));
+}
