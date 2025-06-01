@@ -251,6 +251,23 @@ do_format (void)
 bool
 filesys_chdir (const char *name)
 {
+  /* Corner case: root path will be rejected by path_split(). */
+  bool is_root = true;
+  for (const char *ptr = name; *ptr != '\0'; ptr++)
+    if (*ptr != '/')
+      {
+        is_root = false;
+        break;
+      }
+  if (is_root)
+    {
+      struct dir *root_dir = dir_open_root ();
+      if (root_dir == NULL)
+        return false;
+      thread_current ()->cwd = ROOT_DIR_SECTOR;
+      return true;
+    }
+
   char *path_name = NULL, *file_name = NULL;
   if (!path_split (name, &path_name, &file_name, true))
     return false; /* Invalid name. */
