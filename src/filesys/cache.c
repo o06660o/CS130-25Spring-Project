@@ -15,11 +15,11 @@
 struct cache_block
 {
   struct block *block;             /* Pointer to the block device. */
-  block_sector_t sector;           /* Sector number of the block. */
+  block_sector_t sector;           /* Sector number of the cache block. */
   bool dirty;                      /* true if block dirty, false otherwise. */
   bool valid;                      /* true if block valid, false otherwise. */
-  uint8_t data[BLOCK_SECTOR_SIZE]; /* Data stored in the block. */
-  struct lock lock;      /* A more fine-grained lock for this block. */
+  uint8_t data[BLOCK_SECTOR_SIZE]; /* Data stored in the cache block. */
+  struct lock lock;      /* A more fine-grained lock for this cache block. */
   struct list_elem elem; /* List element for the cache list. */
 };
 
@@ -47,7 +47,7 @@ cache_init (void)
   thread_create ("cache flush", PRI_DEFAULT, flush_func, NULL);
 }
 
-/* Reads a block from the cache. If the block is not in the cache, read it
+/* Reads a sector from the cache. If the sector is not in the cache, read it
    from disk and add it to the cache. */
 void
 cache_read (struct block *block, block_sector_t sector, void *buffer,
@@ -104,7 +104,8 @@ cache_read (struct block *block, block_sector_t sector, void *buffer,
     lock_release (&cb->lock);
 }
 
-/* Writes a block to the cache. */
+/* Writes a sector to the cache. If the sector is not in the cache, read it
+   from disk and add it to the cache. */
 void
 cache_write (struct block *block, block_sector_t sector, const void *buffer,
              off_t size, off_t offset)
@@ -161,7 +162,7 @@ cache_write (struct block *block, block_sector_t sector, const void *buffer,
     lock_release (&cb->lock);
 }
 
-/* Writes all dirty block back to disk. */
+/* Writes all dirty cache block back to disk. */
 void
 cache_flush (bool done)
 {
