@@ -141,14 +141,40 @@ dir_walk (struct dir **dir, char *ptr)
    directory entry if OFSP is non-null.
    otherwise, returns false and ignores EP and OFSP. */
 static bool
-lookup (const struct dir *dir, const char *name, struct dir_entry *ep,
-        off_t *ofsp)
+lookup (struct dir *dir, const char *name, struct dir_entry *ep, off_t *ofsp)
 {
   struct dir_entry e;
   size_t ofs;
 
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
+
+  if (strcmp (name, ".") == 0)
+    {
+      if (ep != NULL)
+        {
+          e.in_use = true;
+          e.inode_sector = inode_get_inumber (dir_get_inode (dir));
+          strlcpy (e.name, ".", sizeof e.name);
+          *ep = e;
+        }
+      if (ofsp != NULL)
+        *ofsp = 0;
+      return true;
+    }
+  if (strcmp (name, "..") == 0)
+    {
+      if (ep != NULL)
+        {
+          e.in_use = true;
+          e.inode_sector = inode_get_parent (dir_get_inode (dir));
+          strlcpy (e.name, "..", sizeof e.name);
+          *ep = e;
+        }
+      if (ofsp != NULL)
+        *ofsp = 0;
+      return true;
+    }
 
   for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
        ofs += sizeof e)
@@ -168,7 +194,7 @@ lookup (const struct dir *dir, const char *name, struct dir_entry *ep,
    On success, sets *INODE to an inode for the file, otherwise to
    a null pointer.  The caller must close *INODE. */
 bool
-dir_lookup (const struct dir *dir, const char *name, struct inode **inode)
+dir_lookup (struct dir *dir, const char *name, struct inode **inode)
 {
   struct dir_entry e;
 
@@ -201,6 +227,8 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
 
   /* Check NAME for validity. */
   if (*name == '\0' || strlen (name) > NAME_MAX)
+    return false;
+  if (strcmp (name, ".") == 0 || strcmp (name, "..") == 0)
     return false;
 
   /* Check that NAME is not in use. */
