@@ -189,3 +189,25 @@ flush_func (void *aux UNUSED)
       cache_flush (false);
     }
 }
+
+/* Frees a sector from the cache. If sector isn't in cache, do nothing. */
+void
+cache_free (struct block *block, block_sector_t sector)
+{
+  ASSERT (sector != BLOCK_SECTOR_NONE);
+  lock_acquire (&cache_lock);
+  for (int i = 0; i < CACHE_SIZE; ++i)
+    {
+      lock_acquire (&cache[i].lock);
+      if (cache[i].valid && cache[i].block == block
+          && cache[i].sector == sector)
+        {
+          cache[i].valid = false;
+          cache[i].dirty = false;
+          lock_release (&cache[i].lock);
+          break;
+        }
+      lock_release (&cache[i].lock);
+    }
+  lock_release (&cache_lock);
+}

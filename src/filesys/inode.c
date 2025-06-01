@@ -348,7 +348,11 @@ inode_indirect_close (block_sector_t sector)
 
   for (int i = 0; i < 128; i++)
     if (ib->sectors[i] != BLOCK_SECTOR_NONE)
-      free_map_release (ib->sectors[i], 1);
+      {
+        cache_free (fs_device, ib->sectors[i]);
+        free_map_release (ib->sectors[i], 1);
+      }
+  cache_free (fs_device, sector);
   free_map_release (sector, 1);
 
   free (ib);
@@ -378,7 +382,10 @@ inode_close (struct inode *inode)
         {
           for (int i = 0; i < 10; i++)
             if (inode->data.direct[i] != BLOCK_SECTOR_NONE)
-              free_map_release (inode->data.direct[i], 1);
+              {
+                cache_free (fs_device, inode->data.direct[i]);
+                free_map_release (inode->data.direct[i], 1);
+              }
 
           if (inode->data.indirect != BLOCK_SECTOR_NONE)
             inode_indirect_close (inode->data.indirect);
@@ -392,10 +399,12 @@ inode_close (struct inode *inode)
               for (int i = 0; i < 128; i++)
                 if (ib->sectors[i] != BLOCK_SECTOR_NONE)
                   inode_indirect_close (ib->sectors[i]);
+              cache_free (fs_device, inode->data.doubly_indirect);
               free_map_release (inode->data.doubly_indirect, 1);
               free (ib);
             }
 
+          cache_free (fs_device, inode->sector);
           free_map_release (inode->sector, 1);
         }
 
