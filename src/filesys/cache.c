@@ -170,11 +170,13 @@ cache_flush (bool done)
   lock_acquire (&cache_lock);
   for (int i = 0; i < CACHE_SIZE; ++i)
     {
+      lock_acquire (&cache[i].lock);
       if (cache[i].valid && cache[i].dirty)
         {
           block_write (cache[i].block, cache[i].sector, cache[i].data);
           cache[i].dirty = false;
         }
+      lock_release (&cache[i].lock);
     }
   lock_release (&cache_lock);
 }
