@@ -289,8 +289,8 @@ filesys_chdir (const char *name)
 bool
 filesys_readdir (struct file *file, char *name)
 {
-  struct dir *dir = dir_open (file_get_inode (file));
-  bool success = dir != NULL && dir_readdir (dir, name);
-  /* Ownership is not taken, so we don't close the directory. */
+  struct dir *dir = dir_open_ (file);
+  bool success = dir_readdir (dir, name);
+  dir_close_ (dir, file);
   return success;
 }

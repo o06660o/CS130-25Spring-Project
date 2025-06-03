@@ -335,3 +335,29 @@ dir_empty (struct dir *dir)
 {
   return inode_file_cnt (dir_get_inode (dir)) == 0;
 }
+
+struct dir *
+dir_open_ (struct file *file)
+{
+  struct inode *inode = file_get_inode (file);
+  struct dir *dir = calloc (1, sizeof *dir);
+  if (inode != NULL && dir != NULL && inode_is_dir (inode))
+    {
+      dir->inode = inode;
+      dir->pos = file_tell (file);
+      return dir;
+    }
+  else
+    {
+      free (dir);
+      return NULL;
+    }
+}
+void
+dir_close_ (struct dir *dir, struct file *file)
+{
+  struct inode *inode = dir_get_inode (dir);
+  ASSERT (inode_is_dir (inode));
+  file_seek (file, dir->pos);
+  free (dir);
+}
