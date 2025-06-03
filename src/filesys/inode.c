@@ -521,6 +521,12 @@ inode_close (struct inode *inode)
       /* Remove from inode list and release lock. */
       list_remove (&inode->elem);
 
+      /* Write all cache block back to disk.
+         Actually, we only need to write cache block belonging to this inode,
+         but we flush all cache blocks as it is simpler and the performance is
+         better with relatively small cache. */
+      cache_flush (false);
+
       /* Deallocate blocks if removed. */
       if (inode->removed)
         {
