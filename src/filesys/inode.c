@@ -745,3 +745,12 @@ inode_update_file_cnt (struct inode *inode, int delta)
   cache_write (fs_device, inode->sector, &inode->data, BLOCK_SECTOR_SIZE, 0);
   rwlock_release (&inode->rwlock);
 }
+
+int
+inode_open_cnt (struct inode *inode)
+{
+  rwlock_acquire_reader (&inode->rwlock);
+  int ret = inode->open_cnt;
+  rwlock_release (&inode->rwlock);
+  return ret;
+}

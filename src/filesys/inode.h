@@ -24,5 +24,6 @@ bool inode_is_dir (struct inode *);
 int inode_inumber (struct inode *);
 int inode_file_cnt (struct inode *);
 void inode_update_file_cnt (struct inode *, int delta);
+int inode_open_cnt (struct inode *inode);
 
 #endif /* filesys/inode.h */

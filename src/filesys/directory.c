@@ -284,17 +284,12 @@ dir_remove (struct dir *dir, const char *name)
 
   if (inode_is_dir (inode))
     {
-      if (!dir_empty (dir_open (inode)))
-        {
-          inode_close (inode);
-          return false;
-        }
+      if (!dir_empty (dir_open (inode)) || inode_open_cnt (inode) > 1)
+        goto done;
       block_sector_t sector = inode_get_inumber (inode);
+      /* Cannot remove root or current directory. */
       if (sector == ROOT_DIR_SECTOR || sector == thread_current ()->cwd)
-        {
-          inode_close (inode);
-          return false; /* Cannot remove root or current directory. */
-        }
+        goto done;
     }
 
   /* Erase directory entry. */
