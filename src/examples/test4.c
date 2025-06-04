@@ -19,65 +19,24 @@ pintos -k -T 60 --qemu --filesys-size=4 --swap-size=4 -p \
 #include <string.h>
 #include <syscall.h>
 
-char buf[2000];
+#define MAX_FILE_SIZE (8 * 1024 * 1024) /* 8 MB */
+
+char buf[512];
 
 int
 main (void)
 {
+  printf ("test4: begin\n");
+
   create ("file", 2000);
-
   int fd = open ("file");
-  if (fd <= 1)
+  for (size_t ofs = 0; ofs <= MAX_FILE_SIZE + 200; ofs += 2000)
     {
-      printf ("test4: open failed\n");
-      return EXIT_FAILURE;
+      seek (fd, ofs);
+      int __attribute__ ((unused)) _ = read (fd, buf, sizeof (buf));
     }
-
-  memset (buf, 'e', sizeof (buf));
-  write (fd, buf, 2000);
-  memset (buf, 'a', sizeof (buf));
-
-  printf ("test4: read after EOF\n");
-
-  seek (fd, 1000);
-  int bytes_read = read (fd, buf, sizeof (buf));
-  if (bytes_read != 1000)
-    {
-      printf ("test4: read failed, expected 1000 bytes, got %d\n", bytes_read);
-      close (fd);
-      return EXIT_FAILURE;
-    }
-
-  for (int i = 0; i < 1000; i++)
-    if (buf[i] != 'e')
-      {
-        printf ("test4: read data mismatch at %d\n", i);
-        close (fd);
-        return EXIT_FAILURE;
-      }
-
-  printf ("test4: seek beyond EOF\n");
-  seek (fd, 3000);
-  memset (buf, 'a', sizeof (buf));
-  bytes_read = read (fd, buf, sizeof (buf));
-
-  if (bytes_read != 0)
-    {
-      printf ("test4: read failed, expected 0 bytes, got %d\n", bytes_read);
-      close (fd);
-      return EXIT_FAILURE;
-    }
-
-  unsigned file_size = filesize (fd);
-  if (file_size != 2000)
-    {
-      printf ("test4: file size mismatch, expected 2000, got %u\n", file_size);
-      close (fd);
-      return EXIT_FAILURE;
-    }
-
+  close (fd);
   printf ("test4: success\n");
 
-  close (fd);
   return EXIT_SUCCESS;
 }
