@@ -166,7 +166,8 @@ cache_write (struct block *block, block_sector_t sector, const void *buffer,
 void
 cache_flush (bool done)
 {
-  flush_done = done;
+  if (done)
+    flush_done = done;
   lock_acquire (&cache_lock);
   for (int i = 0; i < CACHE_SIZE; ++i)
     {
@@ -189,6 +190,8 @@ flush_func (void *aux UNUSED)
   while (!flush_done)
     {
       timer_sleep (CACHE_FLUSH_FREQ);
+      if (flush_done)
+        break;
       cache_flush (false);
     }
 }
@@ -213,4 +216,16 @@ cache_free (struct block *block, block_sector_t sector)
       lock_release (&cache[i].lock);
     }
   lock_release (&cache_lock);
+}
+
+void
+cache_lock_release (void)
+{
+  if (lock_held_by_current_thread (&cache_lock))
+    lock_release (&cache_lock);
+  for (int i = 0; i < CACHE_SIZE; ++i)
+    {
+      if (lock_held_by_current_thread (&cache[i].lock))
+        lock_release (&cache[i].lock);
+    }
 }

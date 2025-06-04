@@ -10,6 +10,9 @@
 #ifdef VM
 #include "vm/page.h"
 #endif
+#ifdef FILESYS
+#include "filesys/cache.h"
+#endif
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -168,7 +171,7 @@ page_fault (struct intr_frame *f)
     {
       /* Stack growth. */
       if (!page_full_load_stack (stack_bottom))
-        process_exit (-1);
+        goto fail;
       return;
     }
 #endif
@@ -181,11 +184,11 @@ page_fault (struct intr_frame *f)
       if (not_present)
         {
           if (!page_full_load (fault_addr))
-            process_exit (-1);
+            goto fail;
           return;
         }
 #endif
-      process_exit (-1);
+      goto fail;
       NOT_REACHED ();
     }
   else if (user && not_present)
@@ -194,7 +197,7 @@ page_fault (struct intr_frame *f)
          work correctly.  */
 #ifdef VM
       if (!page_full_load (fault_addr))
-        process_exit (-1);
+        goto fail;
       return;
 #endif
     }
@@ -204,4 +207,9 @@ page_fault (struct intr_frame *f)
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading", user ? "user" : "kernel");
   kill (f);
+  NOT_REACHED ();
+
+fail:
+  cache_lock_release ();
+  process_exit (-1);
 }
