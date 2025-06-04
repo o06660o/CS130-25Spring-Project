@@ -41,9 +41,9 @@ main (void)
 
   seek (fd, 1000);
   int bytes_read = read (fd, buf, sizeof (buf));
-  if (bytes_read != 2000)
+  if (bytes_read != 1000)
     {
-      printf ("test4: read failed, expected 2000 bytes, got %d\n", bytes_read);
+      printf ("test4: read failed, expected 1000 bytes, got %d\n", bytes_read);
       close (fd);
       return EXIT_FAILURE;
     }
@@ -56,35 +56,19 @@ main (void)
         return EXIT_FAILURE;
       }
 
-  for (int i = 1000; i < 2000; i++)
-    if (buf[i] != 0)
-      {
-        printf ("test4: read data after EOf mismatch at %d\n", i);
-        close (fd);
-        return EXIT_FAILURE;
-      }
-
   printf ("test4: seek beyond EOF\n");
   seek (fd, 3000);
   memset (buf, 'a', sizeof (buf));
   bytes_read = read (fd, buf, sizeof (buf));
 
-  if (bytes_read != 2000)
+  if (bytes_read != 0)
     {
-      printf ("test4: read failed, expected 2000 bytes, got %d\n", bytes_read);
+      printf ("test4: read failed, expected 0 bytes, got %d\n", bytes_read);
       close (fd);
       return EXIT_FAILURE;
     }
 
-  for (int i = 0; i < 2000; i++)
-    if (buf[i] != 0)
-      {
-        printf ("test4: read data after EOF mismatch at %d\n", i);
-        close (fd);
-        return EXIT_FAILURE;
-      }
-
-  unsigned file_size = tell (fd);
+  unsigned file_size = filesize (fd);
   if (file_size != 2000)
     {
       printf ("test4: file size mismatch, expected 2000, got %u\n", file_size);
