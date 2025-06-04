@@ -641,7 +641,13 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (inode->deny_write_cnt)
     return 0;
 
-  rwlock_acquire_writer (&inode->rwlock);
+  /* When writing to a file does not extend the file, multiple processes should
+     also be able to write a single file at once. */
+
+  if (offset + size > inode->data.length)
+    rwlock_acquire_writer (&inode->rwlock);
+  else
+    rwlock_acquire_reader (&inode->rwlock);
 
   /* Grow the file size if necessary. */
   if (offset + size > inode->data.length)
