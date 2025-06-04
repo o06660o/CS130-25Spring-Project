@@ -92,14 +92,15 @@ cache_read (struct block *block, block_sector_t sector, void *buffer,
 
       cb->block = block;
       cb->sector = sector;
+      cb->valid = false;
       block_read (block, sector, cb->data);
       cb->dirty = false;
-      cb->valid = true;
     }
   else
     lock_release (&cache_lock);
 
   memcpy (buffer, cb->data + offset, size);
+  cb->valid = true;
   if (!is_cache_block_lock_held)
     lock_release (&cb->lock);
 }
@@ -150,14 +151,15 @@ cache_write (struct block *block, block_sector_t sector, const void *buffer,
 
       cb->block = block;
       cb->sector = sector;
+      cb->valid = false;
       block_read (block, sector, cb->data);
       cb->dirty = true;
-      cb->valid = true;
     }
   else
     lock_release (&cache_lock);
 
   memcpy (cb->data + offset, buffer, size);
+  cb->valid = true;
   if (!is_cache_block_lock_held)
     lock_release (&cb->lock);
 }
