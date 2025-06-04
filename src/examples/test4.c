@@ -1,10 +1,8 @@
 /* test4.c
 
    Tests reading and seeking after EOF.
-   It creates a file, writes 2000 bytes to it, and then starts reading at
-   offset 1000, reading 2000 bytes.
-   Then, seeking beyond EOF at offset 3000 and reading 2000 bytes.
-   Reading and seeking after EOF doesn't lead to file growth.
+   Creates a file of 2000 bytes, seeks to offsets beyond EOF then reading,
+   until MAX_FILE_SIZE.
 
 cd ../../examples/ && \
 make && \
