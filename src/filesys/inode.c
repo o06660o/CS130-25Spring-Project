@@ -88,6 +88,8 @@ static block_sector_t doubly_indirect_lookup (const block_sector_t, off_t pos);
 static block_sector_t
 indirect_lookup (const block_sector_t sector, off_t pos)
 {
+  if (sector == BLOCK_SECTOR_NONE)
+    return BLOCK_SECTOR_NONE;
   struct indirect_block *ib = malloc (sizeof (struct indirect_block));
   cache_read (fs_device, sector, ib, BLOCK_SECTOR_SIZE, 0);
 
@@ -101,6 +103,8 @@ indirect_lookup (const block_sector_t sector, off_t pos)
 static block_sector_t
 doubly_indirect_lookup (const block_sector_t sector, off_t pos)
 {
+  if (sector == BLOCK_SECTOR_NONE)
+    return BLOCK_SECTOR_NONE;
   struct indirect_block *ib = malloc (sizeof (struct indirect_block));
   cache_read (fs_device, sector, ib, BLOCK_SECTOR_SIZE, 0);
 
@@ -113,8 +117,8 @@ doubly_indirect_lookup (const block_sector_t sector, off_t pos)
 
 /* Returns the block device sector that contains byte offset POS
    within INODE.
-   Returns -1 if INODE does not contain data for a byte at offset
-   POS. */
+   Returns BLOCK_SECTOR_NONE if INODE does not contain data for a byte at
+   offset POS. */
 static block_sector_t
 byte_to_sector_unlocked (const struct inode *inode, off_t pos)
 {
@@ -136,7 +140,7 @@ byte_to_sector_unlocked (const struct inode *inode, off_t pos)
     return doubly_indirect_lookup (inode->data.doubly_indirect, pos - lower);
   lower += delta;
 
-  return -1; /* This byte cannot be stored in this inode. */
+  return BLOCK_SECTOR_NONE; /* This byte cannot be stored in this inode. */
 }
 
 static bool
@@ -594,6 +598,11 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       /* Disk sector to read, starting byte offset within sector. */
       block_sector_t sector_idx = byte_to_sector_unlocked (inode, offset);
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
+
+      /* If the sector is invalid, sectors after current offset must be
+         invalid. */
+      if (sector_idx == BLOCK_SECTOR_NONE)
+        break;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
       off_t inode_left = inode_length_unlocked (inode) - offset;
