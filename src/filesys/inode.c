@@ -4,6 +4,7 @@
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "threads/thread.h"
 #include <debug.h>
 #include <list.h>
 #include <round.h>
@@ -37,6 +38,17 @@ struct inode_disk
   uint8_t unused[BLOCK_SECTOR_SIZE - sizeof (block_sector_t) * 13
                  - sizeof (off_t) - sizeof (unsigned) - sizeof (int32_t) * 2];
 };
+
+/* Read-ahead helpers. */
+struct read_ahead_data
+{
+  struct list_elem elem; /* Element in read ahead list. */
+  block_sector_t sector; /* Sector number of disk location. */
+};
+struct lock read_ahead_lock;
+struct list read_ahead_list;
+struct semaphore read_ahead_sema;
+static void read_ahead_func (void *);
 
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
@@ -79,6 +91,10 @@ inode_init (void)
   list_init (&open_inodes);
   lock_init (&open_inodes_lock);
   lock_init (&inode_reopen_lock);
+  lock_init (&read_ahead_lock);
+  list_init (&read_ahead_list);
+  sema_init (&read_ahead_sema, 0);
+  thread_create ("read-ahead", PRI_DEFAULT, read_ahead_func, NULL);
 }
 
 static block_sector_t indirect_lookup (const block_sector_t, off_t pos);
@@ -624,6 +640,19 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       cache_read (fs_device, sector_idx, buffer + bytes_read, chunk_size,
                   sector_ofs);
 
+      /* Read ahead. */
+      sector_idx = byte_to_sector_unlocked (inode, offset + BLOCK_SECTOR_SIZE);
+      if (sector_idx != BLOCK_SECTOR_NONE)
+        {
+          struct read_ahead_data *ra
+              = malloc (sizeof (struct read_ahead_data));
+          ra->sector = sector_idx;
+          lock_acquire (&read_ahead_lock);
+          list_push_back (&read_ahead_list, &ra->elem);
+          lock_release (&read_ahead_lock);
+          sema_up (&read_ahead_sema);
+        }
+
       /* Advance. */
       size -= chunk_size;
       offset += chunk_size;
@@ -782,4 +811,33 @@ inode_open_cnt (struct inode *inode)
   int ret = inode->open_cnt;
   rwlock_release (&inode->rwlock);
   return ret;
+}
+
+/* The read-ahead thread. This function is a placeholder for that thread's
+   function.*/
+static void
+read_ahead_func (void *aux UNUSED)
+{
+  while (true)
+    {
+      sema_down (&read_ahead_sema);
+      lock_acquire (&read_ahead_lock);
+      if (list_empty (&read_ahead_list))
+        {
+          lock_release (&read_ahead_lock);
+          return;
+        }
+      struct read_ahead_data *ra = list_entry (
+          list_pop_front (&read_ahead_list), struct read_ahead_data, elem);
+      lock_release (&read_ahead_lock);
+      cache_read (fs_device, ra->sector, NULL, 0, 0);
+      free (ra);
+    }
+}
+
+/* Ends the read-ahead thread. */
+void
+inode_read_ahead_done (void)
+{
+  sema_up (&read_ahead_sema);
 }
