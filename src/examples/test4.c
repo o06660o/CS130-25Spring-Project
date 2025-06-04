@@ -3,6 +3,7 @@
    Tests reading and seeking after EOF.
    Creates a file of 2000 bytes, seeks to offsets beyond EOF then reading,
    until MAX_FILE_SIZE.
+   Reading and seeking after EOF should not cause file growth.
 
 cd ../../examples/ && \
 make && \
@@ -33,6 +34,13 @@ main (void)
       seek (fd, ofs);
       int __attribute__ ((unused)) _ = read (fd, buf, sizeof (buf));
     }
+  if (filesize (fd) != 2000)
+    {
+      printf ("test4: file size changed (should not happen)\n");
+      close (fd);
+      return EXIT_FAILURE;
+    }
+
   close (fd);
   printf ("test4: success\n");
 
