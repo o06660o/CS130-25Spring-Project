@@ -248,6 +248,7 @@ do_format (void)
   printf ("done.\n");
 }
 
+/* Changes the current working directory to NAME. */
 bool
 filesys_chdir (const char *name)
 {
@@ -286,6 +287,10 @@ filesys_chdir (const char *name)
   return true;
 }
 
+/* Reads the next file name from the directory represented by FILE.
+   If successful, stores the name in NAME and returns true.
+   Returns false if there are no more files or if an error occurs.
+   Fails if FILE is not a directory. */
 bool
 filesys_readdir (struct file *file, char *name)
 {

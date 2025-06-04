@@ -336,6 +336,8 @@ dir_empty (struct dir *dir)
   return inode_file_cnt (dir_get_inode (dir)) == 0;
 }
 
+/* Used for the readdir() syscall, because we can only convert a file
+   descriptor to a file, not a directory. */
 struct dir *
 dir_open_ (struct file *file)
 {
@@ -353,6 +355,9 @@ dir_open_ (struct file *file)
       return NULL;
     }
 }
+
+/* Used for the readdir() syscall, because we can only convert a file
+   descriptor to a file, not a directory. */
 void
 dir_close_ (struct dir *dir, struct file *file)
 {

@@ -81,10 +81,10 @@ inode_init (void)
   lock_init (&inode_reopen_lock);
 }
 
-/* Helper functions for byte_to_sector_unlocked(). */
 static block_sector_t indirect_lookup (const block_sector_t, off_t pos);
 static block_sector_t doubly_indirect_lookup (const block_sector_t, off_t pos);
 
+/* Helper function for byte_to_sector_unlocked(). */
 static block_sector_t
 indirect_lookup (const block_sector_t sector, off_t pos)
 {
@@ -100,6 +100,7 @@ indirect_lookup (const block_sector_t sector, off_t pos)
   return ret;
 }
 
+/* Helper function for byte_to_sector_unlocked(). */
 static block_sector_t
 doubly_indirect_lookup (const block_sector_t sector, off_t pos)
 {
@@ -143,6 +144,7 @@ byte_to_sector_unlocked (const struct inode *inode, off_t pos)
   return BLOCK_SECTOR_NONE; /* This byte cannot be stored in this inode. */
 }
 
+/* Allocates a new indirect block and writes it to SECTOR. */
 static bool
 inode_indirect_allocate (block_sector_t *sector)
 {
@@ -156,6 +158,8 @@ inode_indirect_allocate (block_sector_t *sector)
   return true;
 }
 
+/* Grows the inode DISK_INODE by SECTORS sectors.
+   Returns true if successful, false if memory or disk allocation fails. */
 static bool
 inode_grow_unlocked (struct inode_disk *disk_inode, int sectors)
 {
@@ -488,6 +492,8 @@ inode_get_parent (struct inode *inode)
   return parent;
 }
 
+/* Closes all indirect blocks of the inode with sector SECTOR.
+   Releases the free map for all blocks and frees the indirect block itself. */
 static void
 inode_indirect_close (block_sector_t sector)
 {
@@ -732,6 +738,8 @@ inode_length (struct inode *inode)
   return length;
 }
 
+/* The unlocked version of inode_length() that does not acquire the
+   read lock. */
 static off_t
 inode_length_unlocked (struct inode *inode)
 {

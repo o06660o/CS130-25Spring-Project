@@ -220,6 +220,8 @@ cache_free (struct block *block, block_sector_t sector)
   lock_release (&cache_lock);
 }
 
+/* When page_fault() occurs, we need to release the locks held by the
+   current thread on the cache and cache blocks. */
 void
 cache_lock_release (void)
 {
