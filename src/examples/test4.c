@@ -1,9 +1,10 @@
 /* test4.c
 
-   Tests read after EOF.
+   Tests reading and seeking after EOF.
    It creates a file, writes 2000 bytes to it, and then starts reading at
    offset 1000, reading 2000 bytes.
-   Reading after EOF doesn't lead to file growth.
+   Then, seeking beyond EOF at offset 3000 and reading 2000 bytes.
+   Reading and seeking after EOF doesn't lead to file growth.
 
 cd ../../examples/ && \
 make && \
@@ -36,19 +37,13 @@ main (void)
   write (fd, buf, 2000);
   memset (buf, 'a', sizeof (buf));
 
+  printf ("test4: read after EOF\n");
+
   seek (fd, 1000);
   int bytes_read = read (fd, buf, sizeof (buf));
   if (bytes_read != 2000)
     {
       printf ("test4: read failed, expected 2000 bytes, got %d\n", bytes_read);
-      close (fd);
-      return EXIT_FAILURE;
-    }
-
-  unsigned file_size = tell (fd);
-  if (file_size != 2000)
-    {
-      printf ("test4: file size mismatch, expected 2000, got %u\n", file_size);
       close (fd);
       return EXIT_FAILURE;
     }
@@ -68,6 +63,34 @@ main (void)
         close (fd);
         return EXIT_FAILURE;
       }
+
+  printf ("test4: seek beyond EOF\n");
+  seek (fd, 3000);
+  memset (buf, 'a', sizeof (buf));
+  bytes_read = read (fd, buf, sizeof (buf));
+
+  if (bytes_read != 2000)
+    {
+      printf ("test4: read failed, expected 2000 bytes, got %d\n", bytes_read);
+      close (fd);
+      return EXIT_FAILURE;
+    }
+
+  for (int i = 0; i < 2000; i++)
+    if (buf[i] != 0)
+      {
+        printf ("test4: read data after EOF mismatch at %d\n", i);
+        close (fd);
+        return EXIT_FAILURE;
+      }
+
+  unsigned file_size = tell (fd);
+  if (file_size != 2000)
+    {
+      printf ("test4: file size mismatch, expected 2000, got %u\n", file_size);
+      close (fd);
+      return EXIT_FAILURE;
+    }
 
   printf ("test4: success\n");
 
