@@ -42,22 +42,13 @@ void cond_wait (struct condition *, struct lock *);
 void cond_signal (struct condition *, struct lock *);
 void cond_broadcast (struct condition *, struct lock *);
 
-enum rwlock_state
-{
-  RWLOCK_READER, /* Reader state. */
-  RWLOCK_WRITER, /* Writer state. */
-  RWLOCK_READY   /* Ready state, no readers or writers. */
-};
-
-/* A reader first read-write lock. */
+/* A fair read-write lock. */
 struct rwlock
 {
-  enum rwlock_state state;  /* Current state of the lock. */
-  struct lock lock;         /* Lock for the condition variable. */
-  struct condition readers; /* Condition variable for readers. */
-  struct condition writers; /* Condition variable for writers. */
-  unsigned holder_count;    /* Number of readers holding the lock. */
-  struct thread *holder;    /* The writer holding the lock, if any. */
+  struct lock lock;        /* Lock for mutex access. */
+  struct list waiters;     /* List of waiting threads. */
+  unsigned active_readers; /* Number of active readers. */
+  unsigned active_writers; /* Number of active writers. */
 };
 
 void rwlock_init (struct rwlock *);

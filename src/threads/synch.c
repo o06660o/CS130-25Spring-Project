@@ -429,6 +429,21 @@ cond_broadcast (struct condition *cond, struct lock *lock)
     cond_signal (cond, lock);
 }
 
+struct rwlock_waiter
+{
+  struct list_elem elem; /* List element for the waiters list. */
+  bool is_writer;        /* True if this waiter is a writer. */
+  struct semaphore sema; /* Semaphore for the waiter. */
+};
+
+static void
+waiter_init (struct rwlock_waiter *waiter, bool is_writer)
+{
+  ASSERT (waiter != NULL);
+  sema_init (&waiter->sema, 0);
+  waiter->is_writer = is_writer;
+}
+
 /* Initializes RWLOCK. A read-write lock allows multiple
    threads to read a shared resource simultaneously, but only one
    thread to write to it at a time. */
@@ -436,13 +451,10 @@ void
 rwlock_init (struct rwlock *rwlock)
 {
   ASSERT (rwlock != NULL);
-
-  rwlock->state = RWLOCK_READY;
   lock_init (&rwlock->lock);
-  cond_init (&rwlock->readers);
-  cond_init (&rwlock->writers);
-  rwlock->holder_count = 0;
-  rwlock->holder = NULL;
+  list_init (&rwlock->waiters);
+  rwlock->active_readers = 0;
+  rwlock->active_writers = 0;
 }
 
 /* Acquires a read lock on RWLOCK, allowing multiple threads to
@@ -457,15 +469,21 @@ rwlock_acquire_reader (struct rwlock *rwlock)
   ASSERT (rwlock != NULL);
   ASSERT (!intr_context ());
   lock_acquire (&rwlock->lock);
-  while (rwlock->state == RWLOCK_WRITER)
+
+  /* No wait shortcut. */
+  if (list_empty (&rwlock->waiters) && rwlock->active_writers == 0)
     {
-      /* Cannot downgrade write-lock to read-lock. */
-      ASSERT (rwlock->holder != thread_current ());
-      cond_wait (&rwlock->readers, &rwlock->lock);
+      rwlock->active_readers++;
+      lock_release (&rwlock->lock);
+      return;
     }
-  rwlock->state = RWLOCK_READER;
-  rwlock->holder_count++;
+
+  struct rwlock_waiter w;
+  waiter_init (&w, false);
+  list_push_back (&rwlock->waiters, &w.elem);
   lock_release (&rwlock->lock);
+
+  sema_down (&w.sema);
 }
 
 /* Acquires a write lock on RWLOCK, allowing exclusive access to
@@ -480,16 +498,22 @@ rwlock_acquire_writer (struct rwlock *rwlock)
   ASSERT (rwlock != NULL);
   ASSERT (!intr_context ());
   lock_acquire (&rwlock->lock);
-  while (rwlock->state != RWLOCK_READY)
+
+  /* No wait shortcut. */
+  if (list_empty (&rwlock->waiters) && rwlock->active_readers == 0
+      && rwlock->active_writers == 0)
     {
-      /* Write-lock is not recursive. */
-      ASSERT (rwlock->holder != thread_current ());
-      cond_wait (&rwlock->writers, &rwlock->lock);
+      rwlock->active_writers++;
+      lock_release (&rwlock->lock);
+      return;
     }
-  rwlock->state = RWLOCK_WRITER;
-  rwlock->holder_count++;
-  rwlock->holder = thread_current ();
+
+  struct rwlock_waiter w;
+  waiter_init (&w, true);
+  list_push_back (&rwlock->waiters, &w.elem);
   lock_release (&rwlock->lock);
+
+  sema_down (&w.sema);
 }
 
 /* Releases the read or write lock on RWLOCK. The lock must be
@@ -498,28 +522,42 @@ void
 rwlock_release (struct rwlock *rwlock)
 {
   ASSERT (rwlock != NULL);
-  ASSERT (rwlock->holder_count > 0);
   lock_acquire (&rwlock->lock);
-  if (rwlock->state == RWLOCK_READER)
+  if (rwlock->active_readers > 0)
+    rwlock->active_readers--;
+  else if (rwlock->active_writers > 0)
+    rwlock->active_writers--;
+  else
+    PANIC ("rwlock_release called without an active lock");
+
+  if (rwlock->active_readers == 0 && rwlock->active_writers == 0)
     {
-      rwlock->holder_count--;
-      if (rwlock->holder_count == 0)
+      while (!list_empty (&rwlock->waiters))
         {
-          rwlock->state = RWLOCK_READY;
-          rwlock->holder = NULL;
-          cond_signal (&rwlock->writers, &rwlock->lock);
+          struct rwlock_waiter *waiter = list_entry (
+              list_pop_front (&rwlock->waiters), struct rwlock_waiter, elem);
+          if (waiter->is_writer)
+            {
+              if (!(rwlock->active_writers == 0
+                    && rwlock->active_readers == 0))
+                {
+                  list_push_front (&rwlock->waiters, &waiter->elem);
+                  break;
+                }
+              rwlock->active_writers++;
+              sema_up (&waiter->sema);
+            }
+          else
+            {
+              if (rwlock->active_writers > 0)
+                {
+                  list_push_front (&rwlock->waiters, &waiter->elem);
+                  break;
+                }
+              rwlock->active_readers++;
+              sema_up (&waiter->sema);
+            }
         }
     }
-  else if (rwlock->state == RWLOCK_WRITER)
-    {
-      rwlock->state = RWLOCK_READY;
-      rwlock->holder = NULL;
-      rwlock->holder_count--;
-      cond_signal (&rwlock->writers, &rwlock->lock);
-      cond_broadcast (&rwlock->readers, &rwlock->lock);
-    }
-  else
-    PANIC ("rwlock_release: rwlock is not in a valid state");
-
   lock_release (&rwlock->lock);
 }
