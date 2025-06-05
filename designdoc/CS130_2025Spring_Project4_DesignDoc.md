@@ -233,11 +233,13 @@ all dirty pages into the disk.
 
 > **C5:** When one process is actively reading or writing data in a buffer cache block, how are other processes prevented from evicting that block?
 
-*Your answer here.*
+We use a per-block lock to prevent this case. The reading/writing thread will
+acquire that block's lock first and other processes are not able to evict it.
 
 > **C6:** During the eviction of a block from the cache, how are other processes prevented from attempting to access the block?
 
-*Your answer here.*
+We use a per-block lock to prevent this case. The evicting thread will acquire
+that block's lock first and other processes are not able to access it.
 
 ### Rationale
 
