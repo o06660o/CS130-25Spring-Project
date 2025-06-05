@@ -1,6 +1,7 @@
 #include "vm/frame.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "threads/interrupt.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
@@ -139,7 +140,7 @@ frame_free (void *kpage)
     lock_release (&frame_lock);
 }
 
-/* Change pinned status of frame at KPAGE to STATUS. */
+/* Change pinned status of frame at KPAGE to STATUS atomically. */
 void
 frame_set_pinned (void *kpage, bool status)
 {
@@ -148,12 +149,14 @@ frame_set_pinned (void *kpage, bool status)
   bool lock_already_held = lock_held_by_current_thread (&frame_lock);
   if (!lock_already_held)
     lock_acquire (&frame_lock);
+  enum intr_level old_level = intr_disable ();
   struct frame tmp;
   tmp.kpage = kpage;
   struct hash_elem *elem = hash_find (&frame_hash, &tmp.hashelem);
   ASSERT (elem != NULL);
   struct frame *frame = hash_entry (elem, struct frame, hashelem);
   frame->pinned = status;
+  intr_set_level (old_level);
   if (!lock_already_held)
     lock_release (&frame_lock);
 }
