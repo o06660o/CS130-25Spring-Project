@@ -222,7 +222,7 @@ page_full_load_stack (void *upage)
   ASSERT (pg_round_down (upage) == upage);
 
   lock_acquire (&sup_page_table_lock);
-  page->type = PAGE_ALLOC;
+  page->type = PAGE_UNALLOC;
   page->kpage = NULL;
   page->slot_idx = SLOT_ERR;
 
@@ -247,6 +247,7 @@ page_full_load_stack (void *upage)
   ASSERT (pagedir_get_page (page->owner->pagedir, page->upage) == kpage);
 
   page->kpage = kpage;
+  page->type = PAGE_ALLOC;
   frame_set_pinned (kpage, false);
   return true;
 fail:
