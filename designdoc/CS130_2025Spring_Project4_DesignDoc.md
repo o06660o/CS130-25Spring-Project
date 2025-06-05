@@ -215,11 +215,13 @@ struct read_ahead_data
 
 > **C2:** Describe how your cache replacement algorithm chooses a cache block to evict.
 
-We use a Least Recently Used (LRU) replacement policy. To implement this,
-we maintain a list of cache blocks ordered by their last access time.
-Whenever a cache block is accessed, we move it to the back of the list
-to mark it as most recently used. When eviction is required, we remove
-the block at the front of the list, since it is the least recently used.
+We use a Least Recently Used (LRU) replacement policy.
+
+To implement this, we maintain a list of cache blocks ordered by their
+last access time. Whenever a cache block is accessed, we move it to the
+back of the list to mark it as most recently used. When eviction is
+required, we remove the block at the front of the list, since it is the
+least recently used.
 
 > **C3:** Describe your implementation of write-behind.
 
@@ -233,11 +235,13 @@ all dirty pages into the disk.
 
 To implement this, we use a list and a semaphore.
 
+First, create a read-ahead thread waiting for `sema_down()`.
+
 In `inode_read_at()`, for each `offset` in the loop, send a read-ahead requirement
 at `offset + BLOCK_SECTOR_SIZE` to read next block asynchronously. 
 
-Read-ahead rquirements is pushed into a list, then the thread called `sema_up()`.
-A thread will wait `sema_down()` and get requirements in the list to read the
+Read-ahead rquirements are pushed into a list, then the thread called `sema_up()`.
+The read-ahead thread will be wake up and get requirements in the list to read the
 block into cache.
 
 List operations may cause race condition, so we use a lock to avoid potential problems.
