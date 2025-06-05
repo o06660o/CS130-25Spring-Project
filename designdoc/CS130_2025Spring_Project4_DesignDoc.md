@@ -44,7 +44,36 @@ struct inode_disk
   /* Not used. */
   uint8_t unused[BLOCK_SECTOR_SIZE - sizeof (block_sector_t) * 12
                  - sizeof (off_t) - sizeof (unsigned)];
-}
+};
+
+struct inode {
+  /* ... */
+  struct rwlock rwlock;   /* Read-write lock for inode. */
+};
+```
+
+#### New Struct to `threads/synch.h`
+
+```c
+/* A fair read-write lock. */
+struct rwlock
+{
+  struct lock lock;        /* Lock for mutex access. */
+  struct list waiters;     /* List of waiting threads. */
+  unsigned active_readers; /* Number of active readers. */
+  unsigned active_writers; /* Number of active writers. */
+};
+```
+
+#### New Struct to `threads/synch.c`
+
+```c
+struct rwlock_waiter
+{
+  struct list_elem elem; /* List element for the waiters list. */
+  bool is_writer;        /* True if this waiter is a writer. */
+  struct semaphore sema; /* Semaphore for the waiter. */
+};
 ```
 
 > **A2:** What is the maximum size of a file supported by your inode structure? Show your work.
@@ -59,15 +88,23 @@ $$
 
 > **A3:** Explain how your code avoids a race if two processes attempt to extend a file at the same time.
 
-*Your answer here.*
+We designed a read-write lock which allows multiple reader or single writer
+accessing the critical section. If a file needs to be extended, a writer's
+lock needs to be acquired, which avoids two processes extending a file at
+the same time.
 
 > **A4:** Suppose processes A and B both have file F open, both positioned at end-of-file. If A reads and B writes F at the same time, A may read all, part, or none of what B writes. However, A may not read data other than what B writes (e.g., if B writes nonzero data, A is not allowed to see all zeros). Explain how your code avoids this race.
 
-*Your answer here.*
+A acquires reader's lock while B acquires writer's lock, their operations
+won't be parallel.
+
+- If A operates first, it will read none of what B writes.
+- If B operates first, A will wait for B to finish, then read part or all that B writes.
 
 > **A5:** Explain how your synchronization design provides "fairness." File access is "fair" if readers cannot indefinitely block writers or vice versa—meaning that many readers do not prevent a writer, and many writers do not prevent a reader.
 
-*Your answer here.*
+All request threads will be stored in a FIFO queue, and they will be handled
+in order.
 
 ### Rationale
 
@@ -122,12 +159,18 @@ token in directory and walking deeper.
 
 > **B4:** How do you prevent races on directory entries? For example, only one of two simultaneous attempts to remove a single file should succeed, as should only one of two simultaneous attempts to create a file with the same name.
 
-*Your answer here.*
+If different directory entries pointes to the same inode, their operations
+are protected by the reader-writer lock inside each inode. Therefore,
+two simultaneous attempts to remove a single file won't be parallel. One
+attempts will succeed and the other will fail since the file does't exist.
+When it comes to creating simultaneously, one attempts will succeed and
+the other will fail since a file already exists.
 
 > **B5:** Does your implementation allow a directory to be removed if it is open by a process or if it is in use as a process's current working directory?  
 > If so, what happens to that process's future file system operations? If not, how do you prevent it?
 
-*Your answer here.*
+We disallow this case. Before removing a directory, we check its sector is not
+the cwd of current process, and its inode's open count is not greater than one.
 
 ### Rationale
 
@@ -158,6 +201,13 @@ struct cache_block
   uint8_t data[BLOCK_SECTOR_SIZE]; /* Data stored in the cache block. */
   struct lock lock;      /* A more fine-grained lock for this cache block. */
   struct list_elem elem; /* List element for the cache list. */
+};
+
+/* Read-ahead helpers. */
+struct read_ahead_data
+{
+  struct list_elem elem; /* Element in read ahead list. */
+  block_sector_t sector; /* Sector number of disk location. */
 };
 ```
 
